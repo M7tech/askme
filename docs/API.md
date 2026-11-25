@@ -39,7 +39,7 @@ GET responses use document for the question list. Writes use questions. POST /im
 POST /rooms accepts the quiz ID and room configuration. Example:
 
 ```json
-{"quiz":"quiz-uuid","mode":"live","release":"manual","anonymous":false,"max":500,"late":true,"photography":false,"rank":false,"graded":true}
+{"quiz":"quiz-uuid","mode":"live","release":"manual","anonymous":false,"max":500,"late":true,"photography":false,"selfie":false,"rank":false,"graded":true}
 ```
 
 The response contains pin. GET /rooms lists sessions accessible to the lecturer. Use /rooms/{pin} as the prefix below.

@@ -74,6 +74,8 @@ function configuration(b) {
     graded: b.graded !== false,
     photography: !!b.photography,
     guardian: !!b.guardian,
+    // Selfies are session photographs: same consent, storage and deletion rules.
+    selfie: !!b.photography && !!b.selfie,
     team: !!b.team,
     secret: b.private ? hash(token()) : "",
     stats: false,
@@ -144,6 +146,8 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
       private: !!r.config.secret,
       team: r.config.team,
       photography: r.config.photography,
+      selfie: !!r.config.selfie,
+      guardian: !!r.config.guardian,
     });
   });
   app.post("/api/rooms/:pin/join", async (req, res) => {
@@ -220,7 +224,7 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
     const r = await getRoom(req.params.pin);
     manage(req.user, r);
     const people = await rows(
-      "SELECT id,name,team,consent,feedback,guardian_reference FROM people WHERE pin=$1 ORDER BY joined",
+      "SELECT id,name,team,consent,feedback,guardian_reference,(SELECT f.id FROM photos f WHERE f.person=people.id AND people.consent AND f.moment='Selfie' ORDER BY f.created DESC LIMIT 1) AS selfie FROM people WHERE pin=$1 ORDER BY joined",
       [r.pin],
     );
     const review = [

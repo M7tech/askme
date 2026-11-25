@@ -28,6 +28,7 @@ import {
   icon,
 } from "./shared.js";
 import { mark, roomFigure, tally } from "./room.js";
+import { selfieStep, bindSelfie } from "./selfie.js";
 let closeLive = () => {};
 function roomCleanup() {
   closeLive();
@@ -133,11 +134,18 @@ async function launch(id) {
         ["self", "Self-paced"],
       ])}${field("Scheduled opening (optional)", "starts", "", "datetime-local")}</div><div class="fields">${field("Participant limit", "max", 500, "number", 'min="1" max="10000" required')}${field("Expires in days", "days", 7, "number", 'min="1" max="365" required')}</div>${switches(
         [
-          ["Anonymous participation", "anonymous"],
           ["Private access phrase", "private"],
           ["Allow late joining", "late", true],
         ],
       )}<div id="phrase"></div>`,
+    ) +
+    group(
+      "When students scan the QR code",
+      switches([
+        ["Ask for name", "askName", true],
+        ["Ask for a selfie", "selfie"],
+      ]) +
+        '<p class="hint">Without a name, students join as numbered guests. A selfie is optional for each student and needs their consent.</p>',
     ) +
     group(
       "Answers",
@@ -197,9 +205,20 @@ async function launch(id) {
             "required",
           )
         : "");
+  // A selfie is a session photograph, so the two settings move together.
+  const selfie = $("[name=selfie]"),
+    photography = $("[name=photography]");
+  selfie.onchange = () => {
+    if (selfie.checked) photography.checked = true;
+  };
+  photography.onchange = () => {
+    if (!photography.checked) selfie.checked = false;
+  };
   submit("#launch", async (b, f) => {
     for (const box of f.querySelectorAll("[type=checkbox]"))
       b[box.name] = box.checked;
+    b.anonymous = !b.askName;
+    delete b.askName;
     if (b.starts) b.starts = new Date(b.starts).toISOString();
     if (b.releaseAt) b.releaseAt = new Date(b.releaseAt).toISOString();
     const r = await api("rooms", "POST", { ...b, quiz: id });
@@ -290,7 +309,7 @@ async function host(pin) {
         ? capped(
             r.people.map(
               (p) =>
-                `<details class="person" data-key="${esc(p.id)}"><summary>${icon("chevron")}<strong translate="no" dir="auto">${esc(p.name)}</strong>${p.team ? `<span class="chip" translate="no">${esc(p.team)}</span>` : ""}</summary><form novalidate class="feedback stack" data-id="${esc(p.id)}">${area("Private feedback", "feedback", p.feedback, `data-key="t${esc(p.id)}"`)}<div class="actions">${submitButton("Save feedback", "small")}${btn("Remove participant", "ask-remove-" + p.id, "small quiet danger", "trash")}</div></form></details>`,
+                `<details class="person" data-key="${esc(p.id)}"><summary>${icon("chevron")}${p.selfie ? `<img class="avatar" width="40" height="40" loading="lazy" alt="Selfie" src="/api/rooms/${esc(pin)}/photos/${esc(p.selfie)}?thumb=1">` : ""}<strong translate="no" dir="auto">${esc(p.name)}</strong>${p.team ? `<span class="chip" translate="no">${esc(p.team)}</span>` : ""}</summary><form novalidate class="feedback stack" data-id="${esc(p.id)}">${area("Private feedback", "feedback", p.feedback, `data-key="t${esc(p.id)}"`)}<div class="actions">${submitButton("Save feedback", "small")}${btn("Remove participant", "ask-remove-" + p.id, "small quiet danger", "trash")}</div></form></details>`,
             ),
           )
         : empty("Share the PIN or QR code to invite participants.")
@@ -370,15 +389,29 @@ async function join(pin, q) {
   const info = await api("rooms/" + pin + "/info"),
     saved = localStorage.getItem(storageKey(pin)),
     play = "play/" + pin + "/" + (Number(q) || 0);
-  main.innerHTML = `<section class="entry"><div class="stage-bar"><p class="stage-pin"><span>${tr("session")}</span> <b class="pin">${esc(pin)}</b></p>${chooseLanguage()}</div><h1 translate="no" dir="auto">${esc(info.title)}</h1>${saved ? `<div class="stack">${link(tr("continue"), "#/" + play, "button primary wide", "", "next")}${link(tr("results"), "#/results/" + pin + "/" + localStorage.getItem("chorus.results." + pin), "button wide", "lock")}</div>` : `<form novalidate id="join" class="stack">${info.anonymous ? "<p>" + tr("anonymous") + "</p>" : field(tr("name"), "name", "", "text", 'required maxlength="80" autocomplete="name" dir="auto"')}${info.private ? field(tr("phrase"), "passcode", "", "password", "required") : ""}${info.team ? field(tr("team"), "team", "", "text", 'dir="auto"') : ""}${info.photography ? check(tr("consent"), "consent") : ""}${submitButton(tr("join"), "primary wide", "", "next")}</form>`}</section>`;
+  main.innerHTML = `<section class="entry"><div class="stage-bar"><p class="stage-pin"><span>${tr("session")}</span> <b class="pin">${esc(pin)}</b></p>${chooseLanguage()}</div><h1 translate="no" dir="auto">${esc(info.title)}</h1>${saved ? `<div class="stack">${link(tr("continue"), "#/" + play, "button primary wide", "", "next")}${link(tr("results"), "#/results/" + pin + "/" + localStorage.getItem("chorus.results." + pin), "button wide", "lock")}</div>` : `<form novalidate id="join" class="stack">${info.anonymous ? "<p>" + tr("anonymous") + "</p>" : field(tr("name"), "name", "", "text", 'required maxlength="80" autocomplete="name" dir="auto"')}${info.private ? field(tr("phrase"), "passcode", "", "password", "required") : ""}${info.team ? field(tr("team"), "team", "", "text", 'dir="auto"') : ""}${info.selfie && !info.guardian ? selfieStep() : info.photography ? check(tr("consent"), "consent") + (info.selfie ? `<p class="hint">${tr("selfieGuardian")}</p>` : "") : ""}${submitButton(tr("join"), "primary wide", "", "next")}</form>`}</section>`;
   bindLanguage();
+  const selfie = bindSelfie();
+  closeLive = selfie.stop;
   submit("#join", async (b) => {
+    const photo = selfie.photo();
     const v = await api("rooms/" + pin + "/join", "POST", {
       ...b,
       consent: b.consent === "on",
     });
     localStorage.setItem(storageKey(pin), v.token);
     localStorage.setItem("chorus.results." + pin, v.resultToken);
+    if (photo) {
+      const form = new FormData();
+      form.append("moment", "Selfie");
+      form.append("image", photo, "selfie.jpg");
+      // Joining has already succeeded, so a failed upload never blocks entry.
+      try {
+        await api("rooms/" + pin + "/photos", "POST", form, v.token);
+      } catch {
+        notice(tr("selfieLater"), "error");
+      }
+    }
     go(play);
   });
 }
