@@ -1,6 +1,6 @@
 # Coolify deployment
 
-The source repository is https://github.com/M7tech/askme.git, branch main. The intended public URL is https://askshaubo.m7tech.info. Use https://coolify.m7tech.info to manage the deployment. Route this domain to the frontend service on port 8080 and set PUBLIC_ORIGIN to the public URL exactly. Point the subdomain's DNS A record at the selected Coolify server's public IP before requesting its HTTPS certificate.
+The source repository is https://github.com/M7tech/askme.git, branch main. The intended public URL is https://ask.m7tech.info. Use https://coolify.m7tech.info to manage the deployment. Route this domain to the frontend service on port 8080 and set PUBLIC_ORIGIN to the public URL exactly. Point the subdomain's DNS A record at the selected Coolify server's public IP before requesting its HTTPS certificate.
 
 For Google Workspace mail, leave SMTP_URL empty and set SMTP_HOST=smtp.gmail.com, SMTP_PORT=465, SMTP_USER to the sender's complete email address, and SMTP_PASSWORD to its Google app password in Coolify's secret environment settings. Set MAIL_FROM to the desired sender. The private local .env file is excluded from Git and Docker build context.
 

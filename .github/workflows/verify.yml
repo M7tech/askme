@@ -21,12 +21,12 @@ jobs:
       - name: Validate deployment configuration
         run: docker compose config --quiet
         env:
-          PUBLIC_ORIGIN: https://askshaubo.m7tech.info
+          PUBLIC_ORIGIN: https://ask.m7tech.info
           POSTGRES_PASSWORD: compose-validation-only
       - name: Build deployment images
         run: docker compose build
         env:
-          PUBLIC_ORIGIN: https://askshaubo.m7tech.info
+          PUBLIC_ORIGIN: https://ask.m7tech.info
           POSTGRES_PASSWORD: compose-validation-only
       - uses: actions/upload-artifact@v4
         if: failure()
