@@ -132,7 +132,14 @@ async function launch(id) {
       `<div class="fields">${select("Participation mode", "mode", [
         ["live", "Presenter-led live"],
         ["self", "Self-paced"],
-      ])}${field("Scheduled opening (optional)", "starts", "", "datetime-local")}</div><div class="fields">${field("Participant limit", "max", 500, "number", 'min="1" max="10000" required')}${field("Expires in days", "days", 7, "number", 'min="1" max="365" required')}</div>${switches(
+      ])}${field("Scheduled opening (optional)", "starts", "", "datetime-local")}</div><div class="fields">${select(
+        "Move between questions",
+        "advance",
+        [
+          ["manual", "When I choose"],
+          ["auto", "Automatically"],
+        ],
+      )}</div><div id="auto"></div><div class="fields">${field("Participant limit", "max", 500, "number", 'min="1" max="10000" required')}${field("Expires in days", "days", 7, "number", 'min="1" max="365" required')}</div>${switches(
         [
           ["Private access phrase", "private"],
           ["Allow late joining", "late", true],
@@ -205,6 +212,15 @@ async function launch(id) {
             "required",
           )
         : "");
+  const pace = () =>
+    ($("#auto").innerHTML =
+      $("[name=advance]").value !== "auto"
+        ? ""
+        : $("[name=mode]").value === "self"
+          ? '<p class="hint">Each student moves to the next question after answering.</p>'
+          : `<div class="stack"><p class="hint">A question closes when its time ends or everyone has answered, then the next one opens. The session ends after the last question.</p><div class="fields">${field("Seconds for questions without a time limit", "autoSeconds", 30, "number", 'min="5" max="3600" required')}${field("Seconds between questions", "autoBreak", 5, "number", 'min="0" max="120" required')}</div></div>`);
+  $("[name=advance]").onchange = pace;
+  $("[name=mode]").onchange = pace;
   // A selfie is a session photograph, so the two settings move together.
   const selfie = $("[name=selfie]"),
     photography = $("[name=photography]");
@@ -261,13 +277,22 @@ function holdDrafts(scope) {
     }
   };
 }
+const typed = [
+  "Text answer",
+  "Fill in the blank",
+  "Survey",
+  "Brainstorm",
+  "Word cloud",
+];
 async function host(pin) {
   const path = "rooms/" + pin + "/";
-  let last = "";
+  let last = "",
+    skew = 0;
   const draw = async () => {
     const r = await api(path + "host");
     if (location.hash !== "#/host/" + pin) return;
-    const json = JSON.stringify(r);
+    skew = r.now - Date.now();
+    const json = JSON.stringify({ ...r, now: 0 });
     if (last === json) return;
     const focused =
       document.activeElement?.closest?.("[data-action]")?.dataset.action;
@@ -275,6 +300,10 @@ async function host(pin) {
     last = json;
     const answered = r.tally.find((v) => v.q === r.position)?.total || 0,
       pending = r.messages.filter((m) => !m.approved);
+    const auto =
+      r.config.advance === "auto" &&
+      r.config.mode === "live" &&
+      r.phase !== "ended";
     const step =
       r.phase === "waiting"
         ? btn("Start session", "start", "sun", "play")
@@ -299,8 +328,9 @@ async function host(pin) {
                 (Number(r.deadline)
                   ? btn("Add 15 seconds", "extend", "", "clock")
                   : "")
-              : "");
-    main.innerHTML = `<div class="page-head"><div class="with-chip">${title(r.title)}${chip(r.phase)}</div><div class="actions"><a href="#/display/${pin}" class="button primary" target="_blank" rel="noopener"><span>Open projector</span>${icon("external")}</a>${link("Session report", "#/report/" + pin, "button", "reports")}${r.config.rank ? link("Competition display", "#/standings/" + pin, "button", "trophy") : ""}${r.config.photography ? link(tr("gallery"), "#/host-gallery/" + pin, "button", "camera") : ""}</div></div><div class="console"><div class="console-main"><section class="podium board" aria-label="Presenter controls"><p class="meta"><span>${`Question ${r.position + 1} of ${r.snapshot.length}`}</span><span>${esc(r.snapshot[r.position].type)}</span></p><h2 translate="no" dir="auto">${esc(r.snapshot[r.position].prompt)}</h2><div class="answered"><p><strong>${num(answered)}</strong> <span>${`of ${r.people.length} participants answered`}</span></p>${tally(answered, r.people.length, "Responses")}</div><div class="actions">${step}</div><div class="actions secondary">${r.config.release === "manual" && !r.revealed.includes(r.position) ? btn("Reveal answer", "reveal", "", "eye") : ""}${btn(r.config.stats ? "Hide statistics" : "Show statistics", "stats", "", "chart")}${r.phase !== "ended" ? btn("End session", "ask-end", "end danger", "stop") : ""}</div></section>${r.review.length ? `<section class="block"><h2>Review text responses</h2><div class="list">${r.review.map((v, i) => `<div class="listitem"><p translate="no" dir="auto">${esc(v.value)}</p>${btn("Approve for display", "text:" + i, "small", "check")}</div>`).join("")}</div></section>` : ""}<section class="block"><h2>Audience moderation</h2>${
+              : "") +
+            (r.config.nextAt ? btn("Hold here", "hold", "", "pause") : "");
+    main.innerHTML = `<div class="page-head"><div class="with-chip">${title(r.title)}${chip(r.phase)}</div><div class="actions"><a href="#/display/${pin}" class="button primary" target="_blank" rel="noopener"><span>Open projector</span>${icon("external")}</a>${link("Session report", "#/report/" + pin, "button", "reports")}${r.snapshot.some((q) => typed.includes(q.type)) ? link("Mark answers", "#/mark/" + pin, "button", "check") : ""}${r.config.rank ? link("Competition display", "#/standings/" + pin, "button", "trophy") : ""}${r.config.photography ? link(tr("gallery"), "#/host-gallery/" + pin, "button", "camera") : ""}</div></div><div class="console"><div class="console-main"><section class="podium board" aria-label="Presenter controls"><p class="meta"><span>${`Question ${r.position + 1} of ${r.snapshot.length}`}</span><span>${esc(r.snapshot[r.position].type)}</span></p><h2 translate="no" dir="auto">${esc(r.snapshot[r.position].prompt)}</h2><div class="answered"><p><strong>${num(answered)}</strong> <span>${`of ${r.people.length} participants answered`}</span></p>${tally(answered, r.people.length, "Responses")}</div>${auto ? `<p class="auto-note"><span>${r.config.nextAt ? (r.position + 1 < r.snapshot.length ? "Next question in" : "Session ends in") : r.phase === "closed" ? "On hold" : "Questions advance automatically"}</span>${r.config.nextAt ? ` <b id="next-in" data-at="${r.config.nextAt}"></b>` : ""}</p>` : ""}<div class="actions">${step}</div><div class="actions secondary">${r.config.release === "manual" && !r.revealed.includes(r.position) ? btn("Reveal answer", "reveal", "", "eye") : ""}${btn(r.config.stats ? "Hide statistics" : "Show statistics", "stats", "", "chart")}${r.phase !== "ended" && r.config.mode === "live" ? btn(auto ? "Turn off automatic" : "Advance automatically", "auto", "", "next") : ""}${r.phase !== "ended" ? btn("End session", "ask-end", "end danger", "stop") : ""}</div></section>${r.review.length ? `<section class="block"><h2>Review text responses</h2><div class="list">${r.review.map((v, i) => `<div class="listitem"><p translate="no" dir="auto">${esc(v.value)}</p>${btn("Approve for display", "text:" + i, "small", "check")}</div>`).join("")}</div></section>` : ""}<section class="block"><h2>Audience moderation</h2>${
       pending.length
         ? `<div class="list">${pending.map((m) => `<div class="listitem"><p translate="no" dir="auto">${esc(m.body)}</p>${btn("Approve", "approve-" + m.id, "small", "check")}</div>`).join("")}</div>`
         : empty("No questions awaiting approval.")
@@ -382,6 +412,23 @@ async function host(pin) {
   };
   await draw();
   watch(pin, draw);
+  const clock = setInterval(() => countNext(skew), 250),
+    old = closeLive;
+  closeLive = () => {
+    old();
+    clearInterval(clock);
+  };
+}
+/* Seconds left before an automatic session moves on. */
+function countNext(offset = 0) {
+  const el = $("#next-in");
+  if (el)
+    el.textContent = num(
+      Math.max(
+        0,
+        Math.ceil((Number(el.dataset.at) - Date.now() - offset) / 1000),
+      ),
+    );
 }
 async function join(pin, q) {
   if (!/^\d{6}$/.test(pin || ""))
@@ -434,6 +481,13 @@ function surface(q, s, { display, available, correct }) {
   if (display) return "";
   if (q.type === "Rating")
     return `<fieldset class="scale" ${off}><legend>${tr("rating")}</legend><div class="answers">${["1", "2", "3", "4", "5"].map((n) => `<label class="point"><input type="radio" required name="value" value="${n}" ${s.response === n ? "checked" : ""}><span>${num(n)}</span></label>`).join("")}</div></fieldset>`;
+  if (["Text answer", "Survey", "Brainstorm"].includes(q.type))
+    return area(
+      tr("response"),
+      "value",
+      s.response || "",
+      'required maxlength="1500" dir="auto" ' + off,
+    );
   return field(
     tr("response"),
     "value",
@@ -459,6 +513,31 @@ function spread(q, s, correct) {
     })
     .join("")}</section>`;
 }
+/* A live update must not wipe an answer or question still being written. */
+function holdAnswer() {
+  const fields = all(
+      "#answer :is(input:not([type=radio]), select, textarea), #discuss input",
+    ).map((el) => [el.form.id, el.name, el.value]),
+    rating = $("#answer input[type=radio]:checked")?.value,
+    active = document.activeElement,
+    focus = active?.form && [active.form.id, active.name],
+    at = active?.selectionStart;
+  const find = (form, name) => $(`#${form} [name="${CSS.escape(name)}"]`);
+  return () => {
+    for (const [form, name, value] of fields) {
+      const el = name && find(form, name);
+      if (el && !el.disabled) el.value = value;
+    }
+    const choice =
+      rating && $(`#answer input[type=radio][value="${CSS.escape(rating)}"]`);
+    if (choice && !choice.disabled) choice.checked = true;
+    if (focus?.[0] && focus[1]) {
+      const el = find(...focus);
+      el?.focus({ preventScroll: true });
+      if (["text", "textarea"].includes(el?.type)) el.setSelectionRange(at, at);
+    }
+  };
+}
 async function stage(pin, requested, display) {
   const session = display ? null : localStorage.getItem(storageKey(pin));
   if (!display && !session) {
@@ -474,6 +553,19 @@ async function stage(pin, requested, display) {
     priorPhase = "",
     talk = null,
     seated = -1;
+  let moving;
+  /* Leave time to read the recorded answer, or the solution when it is shown. */
+  const moveOn = (s) => {
+    if (s.position >= s.count - 1) return;
+    clearTimeout(moving);
+    moving = setTimeout(
+      () => {
+        if (location.hash === target)
+          go("play/" + pin + "/" + (s.position + 1));
+      },
+      Math.max(1.5, $(".solution") ? s.autoBreak : 0) * 1000,
+    );
+  };
   const draw = async () => {
     const s = await api(
       path + "state?q=" + (Number(requested) || 0) + "&lang=" + locale(),
@@ -526,12 +618,16 @@ async function stage(pin, requested, display) {
             : [s.solution]
           : [];
       const ended = s.phase === "ended";
+      const nextNote = s.nextAt
+        ? `<p class="next-note"><span>${tr(s.position < s.count - 1 ? "nextIn" : "endIn")}</span> <b id="next-in" data-at="${s.nextAt}"></b></p>`
+        : "";
+      const keep = changedQ ? null : holdAnswer();
       const body =
         s.phase === "waiting"
           ? `<div class="lobby"><div class="lobby-copy"><h1>${tr("wait")}</h1>${display ? `<div class="lobby-join">${qrImage(pin)}<div><span>${tr("pin")}</span><strong class="pin">${esc(pin)}</strong><span dir="ltr" translate="no">${esc(location.host)}</span></div></div>` : `<p>${tr("joined")}</p>`}</div><div id="hall"></div></div>`
           : ended
             ? `<div class="lobby"><div class="lobby-copy"><h1>${tr("ended")}</h1>${resultLink}</div><div id="hall"></div></div>`
-            : `<div class="question ${fresh ? "enter" : ""}"><div class="question-meta"><p class="meta"><span>${tr("question")} ${num(s.position + 1)} ${tr("of")} ${num(s.count)}</span><span>${esc(q.type)}</span>${s.phase === "open" ? "" : chip(s.phase)}</p><strong id="timer" role="timer"></strong></div><div class="rich" role="heading" aria-level="1" dir="auto" translate="no">${q.rich || esc(q.prompt)}</div>${q.asset ? (q.asset.mime.startsWith("image/") ? `<img class="attachment" alt="Question illustration" src="/api/assets/${esc(q.asset.id)}">` : `<${q.asset.mime.startsWith("audio/") ? "audio" : "video"} class="attachment" controls src="/api/assets/${esc(q.asset.id)}"></${q.asset.mime.startsWith("audio/") ? "audio" : "video"}>`) : ""}<form novalidate class="stack" id="answer">${surface(q, s, { display, available, correct })}${!display && available ? `<div class="answer-bar"><button class="primary wide" id="send"><span>${tr("send")}</span></button></div>` : ""}</form>${s.response !== undefined ? `<p class="info recorded">✓ ${tr("recorded")}: ${esc([s.response].flat().join(", "))}</p>` : ""}${s.solution !== undefined ? `<div class="info solution"><strong>${s.solution ? tr("answer") + ": " + esc(s.solution) : tr("feedback")}</strong>${s.explanation ? `<p dir="auto" translate="no">${esc(s.explanation)}</p>` : ""}${s.reference ? `<small dir="auto" translate="no">${esc(s.reference)}</small>` : ""}</div>` : ""}${s.textStats ? `<section class="cloud" translate="no">${s.textStats.map((v, i) => `<span class="cloudword tone${i % 4} size${Math.min(4, v.n)}" dir="auto">${esc(v.value)} <small>×${num(v.n)}</small></span>`).join("")}</section>` : ""}${s.distribution ? spread(q, s, correct) : ""}</div>`;
+            : `<div class="question ${fresh ? "enter" : ""}"><div class="question-meta"><p class="meta"><span>${tr("question")} ${num(s.position + 1)} ${tr("of")} ${num(s.count)}</span><span>${esc(q.type)}</span>${s.phase === "open" ? "" : chip(s.phase)}</p><strong id="timer" role="timer"></strong></div><div class="rich" role="heading" aria-level="1" dir="auto" translate="no">${q.rich || esc(q.prompt)}</div>${q.asset ? (q.asset.mime.startsWith("image/") ? `<img class="attachment" alt="Question illustration" src="/api/assets/${esc(q.asset.id)}">` : `<${q.asset.mime.startsWith("audio/") ? "audio" : "video"} class="attachment" controls src="/api/assets/${esc(q.asset.id)}"></${q.asset.mime.startsWith("audio/") ? "audio" : "video"}>`) : ""}<form novalidate class="stack" id="answer">${surface(q, s, { display, available, correct })}${!display && available ? `<div class="answer-bar"><button class="primary wide" id="send"><span>${tr("send")}</span></button></div>` : ""}</form>${s.response !== undefined ? `<p class="info recorded">✓ ${tr("recorded")}: ${esc([s.response].flat().join(", "))}</p>` : ""}${s.solution !== undefined ? `<div class="info solution"><strong>${s.solution ? tr("answer") + ": " + esc(s.solution) : tr("feedback")}</strong>${s.explanation ? `<p dir="auto" translate="no">${esc(s.explanation)}</p>` : ""}${s.reference ? `<small dir="auto" translate="no">${esc(s.reference)}</small>` : ""}</div>` : ""}${s.textStats ? `<section class="cloud" translate="no">${s.textStats.map((v, i) => `<span class="cloudword tone${i % 4} size${Math.min(4, v.n)}" dir="auto">${esc(v.value)} <small>×${num(v.n)}</small></span>`).join("")}</section>` : ""}${s.distribution ? spread(q, s, correct) : ""}${nextNote}</div>`;
       const links =
         (!display && s.mode === "self" && s.position > 0
           ? link(
@@ -559,6 +655,7 @@ async function stage(pin, requested, display) {
           : "");
       main.innerHTML = `<section class="stage ${display ? "projector" : ""} ${esc(s.phase)}"><div class="stage-bar"><strong class="stage-title" translate="no" dir="auto">${esc(s.title)}</strong><p class="stage-pin"><span>${tr("pin")}</span> <b class="pin">${esc(pin)}</b></p><p id="count" class="meta"></p>${chooseLanguage()}${display ? `<button type="button" class="icon-button" data-action="fullscreen" aria-label="${tr("fullscreen")}">${icon("fullscreen")}</button>` : ""}</div>${body}${display && s.projected?.length ? `<div class="projected">${s.projected.map((f) => `<img class="photo" alt="${esc(f.moment || "Session photograph")}" src="/api/rooms/${pin}/projected/${esc(f.id)}">`).join("")}</div>` : ""}${links ? `<div class="actions stage-links">${links}</div>` : ""}</section><section class="stage talk ${display ? "projector" : ""}"><h2>${tr("qa")}</h2><div id="discussion"></div>${display || ended ? "" : `<form novalidate id="discuss" class="askform">${field(tr("ask"), "body", "", "text", 'required maxlength="500" dir="auto"')}${submitButton(tr("moderate"), "")}</form>`}</section>`;
       bindLanguage();
+      keep?.();
       function selection() {
         all("[data-action^=pick]").forEach((b, i) => {
           const at = answers.indexOf(q.options[i]);
@@ -653,6 +750,8 @@ async function stage(pin, requested, display) {
           session,
         );
         await draw();
+        // Self-paced students who asked for it move on by themselves.
+        if (s.mode === "self" && s.advance === "auto" && !s.changes) moveOn(s);
       });
       submit("#discuss", async (b, f) => {
         await api(path + "discuss", "POST", b, session);
@@ -685,6 +784,7 @@ async function stage(pin, requested, display) {
     clearInterval(timer);
     const offset = s.now - Date.now();
     const tick = () => {
+      countNext(offset);
       const el = $("#timer");
       if (!el) return;
       if (s.deadline && s.phase === "open") {
@@ -706,6 +806,7 @@ async function stage(pin, requested, display) {
   closeLive = () => {
     old();
     clearInterval(timer);
+    clearTimeout(moving);
   };
 }
 async function results(pin, raw) {
@@ -723,7 +824,7 @@ async function results(pin, raw) {
         : q.correct === false
           ? "wrong"
           : "reviewed";
-  main.innerHTML = `<section class="results"><div class="stage-bar"><p class="chip">${icon("lock")}<span>${tr("privateReport")}</span></p>${chooseLanguage()}${btn(tr("print"), "print", "small", "print")}</div><div class="score board"><div><h1 translate="no" dir="auto">${esc(r.name)}</h1><p translate="no" dir="auto">${esc(r.title)}</p></div><div class="score-value">${r.score === undefined ? "" : `<strong>${num(r.score)} ${tr("points")}</strong>`}${r.percentage != null ? `<p class="meta"><span>${num(r.correct)} ${tr("correct")}</span><span>${num(r.incorrect)} ${tr("incorrect")}</span><span>${num(r.percentage)}%</span></p>` : ""}</div></div><p class="hint">${tr("bookmark")}</p>${r.photos.length ? `<div class="photos">${r.photos.map((f) => `<figure><img id="photo-${esc(f.id)}" class="photo" alt="${esc(f.moment || "Session photograph")}"><figcaption translate="no">${esc(f.moment)}</figcaption></figure>`).join("")}</div>` : ""}${r.feedback ? `<p class="info" translate="no" dir="auto">${esc(r.feedback)}</p>` : ""}<h2 class="review-title">${tr("byQuestion")}</h2><ol class="review">${r.questions.map((q, i) => `<li class="${verdict(q)}"><p class="meta"><span>${tr("question")} ${num(i + 1)}</span>${q.elapsed !== null ? `<span>${num(Math.round(q.elapsed / 1000))} ${tr("seconds")}</span>` : ""}</p><h2 translate="no" dir="auto">${esc(q.prompt)}</h2><dl><div><dt>${tr("response")}</dt><dd translate="no" dir="auto">${esc(q.value === undefined ? tr("unanswered") : [q.value].flat().join(", "))}</dd></div>${q.solution ? `<div><dt>${tr("answer")}</dt><dd translate="no" dir="auto">${esc(q.solution)}</dd></div>` : ""}</dl>${q.solution === undefined ? `<p class="hint">${tr("pending")}</p>` : `<strong class="verdict">${q.correct === true ? "✓ " + tr("correct") : q.correct === false ? tr("incorrect") : tr("reviewed")} · ${num(q.points)} ${tr("points")}</strong>${q.explanation ? `<p translate="no" dir="auto">${esc(q.explanation)}</p>` : ""}`}</li>`).join("")}</ol>${r.leaders ? `<section class="block"><h2>${tr("leaderboard")}</h2><div class="list">${r.leaders.map((v, i) => `<div class="listitem"><strong><span class="place">${num(i + 1)}</span> <span translate="no" dir="auto">${esc(v.name)}</span></strong><span>${num(v.score)} ${tr("points")}</span></div>`).join("")}</div></section>` : ""}${r.certificate ? `<article class="certificate"><div class="seal" aria-hidden="true">${[0, 1, 2, 3].map((i) => mark(i)).join("")}</div><p>${esc(r.design?.title || tr("certificate"))}</p><h2 translate="no" dir="auto">${esc(r.name)}</h2><p>${tr("completed")} <span translate="no">${esc(r.title)}</span></p><div class="sign"><span translate="no">${esc(r.design?.issuer)}</span><strong translate="no">${esc(r.design?.signature)}</strong></div></article>` : ""}</section>`;
+  main.innerHTML = `<section class="results"><div class="stage-bar"><p class="chip">${icon("lock")}<span>${tr("privateReport")}</span></p>${chooseLanguage()}${btn(tr("print"), "print", "small", "print")}</div><div class="score board"><div><h1 translate="no" dir="auto">${esc(r.name)}</h1><p translate="no" dir="auto">${esc(r.title)}</p></div><div class="score-value">${r.score === undefined ? "" : `<strong>${num(r.score)} ${tr("points")}</strong>`}${r.percentage != null ? `<p class="meta"><span>${num(r.correct)} ${tr("correct")}</span><span>${num(r.incorrect)} ${tr("incorrect")}</span><span>${num(r.percentage)}%</span></p>` : ""}</div></div><p class="hint">${tr("bookmark")}</p>${r.photos.length ? `<div class="photos">${r.photos.map((f) => `<figure><img id="photo-${esc(f.id)}" class="photo" alt="${esc(f.moment || "Session photograph")}"><figcaption translate="no">${esc(f.moment)}</figcaption></figure>`).join("")}</div>` : ""}${r.feedback ? `<p class="info" translate="no" dir="auto">${esc(r.feedback)}</p>` : ""}<h2 class="review-title">${tr("byQuestion")}</h2><ol class="review">${r.questions.map((q, i) => `<li class="${verdict(q)}"><p class="meta"><span>${tr("question")} ${num(i + 1)}</span>${q.elapsed !== null ? `<span>${num(Math.round(q.elapsed / 1000))} ${tr("seconds")}</span>` : ""}</p><h2 translate="no" dir="auto">${esc(q.prompt)}</h2><dl><div><dt>${tr("response")}</dt><dd translate="no" dir="auto">${esc(q.value === undefined ? tr("unanswered") : [q.value].flat().join(", "))}</dd></div>${q.solution ? `<div><dt>${tr("answer")}</dt><dd translate="no" dir="auto">${esc(q.solution)}</dd></div>` : ""}</dl>${q.solution === undefined ? `<p class="hint">${tr("pending")}</p>` : q.unmarked ? `<strong class="verdict">${tr("unmarked")}</strong>` : `<strong class="verdict">${q.correct === true ? "✓ " + tr("correct") : q.correct === false ? tr("incorrect") : tr("reviewed")} · ${num(q.points)} ${tr("points")}</strong>${q.explanation ? `<p translate="no" dir="auto">${esc(q.explanation)}</p>` : ""}`}</li>`).join("")}</ol>${r.leaders ? `<section class="block"><h2>${tr("leaderboard")}</h2><div class="list">${r.leaders.map((v, i) => `<div class="listitem"><strong><span class="place">${num(i + 1)}</span> <span translate="no" dir="auto">${esc(v.name)}</span></strong><span>${num(v.score)} ${tr("points")}</span></div>`).join("")}</div></section>` : ""}${r.certificate ? `<article class="certificate"><div class="seal" aria-hidden="true">${[0, 1, 2, 3].map((i) => mark(i)).join("")}</div><p>${esc(r.design?.title || tr("certificate"))}</p><h2 translate="no" dir="auto">${esc(r.name)}</h2><p>${tr("completed")} <span translate="no">${esc(r.title)}</span></p><div class="sign"><span translate="no">${esc(r.design?.issuer)}</span><strong translate="no">${esc(r.design?.signature)}</strong></div></article>` : ""}</section>`;
   bindLanguage();
   actions((a) => {
     if (a === "print") print();
@@ -751,7 +852,7 @@ async function report(pin) {
     i === 4 && (v === "true" || v === "false")
       ? `<td><span class="chip ${v === "true" ? "live" : "bad"}">${v === "true" ? "Correct" : "Incorrect"}</span></td>`
       : `<td dir="auto" translate="no">${esc(v)}</td>`;
-  main.innerHTML = `<div class="page-head"><div>${title(r.title)}<p class="meta"><span>Session report</span><span><span>PIN</span> <b class="pin">${esc(pin)}</b></span></p></div><div class="actions">${link("Export CSV", "/api/" + path + "?format=csv", "button", "download")}${link("Export Excel", "/api/" + path + "?format=xlsx", "button", "download")}${btn("Print / Save PDF", "print", "", "print")}</div></div><section class="accuracy"><h2>Answer accuracy</h2>${graded.length ? `<p class="big">${num(Math.round((100 * right) / graded.length))}%</p><div><progress value="${right}" max="${graded.length}" aria-label="Answer accuracy"></progress><p>${`${right} of ${graded.length} graded responses are correct`}</p></div>` : "<p>No graded responses yet.</p>"}</section>${r.table.length ? `<div><div class="scroll" tabindex="0" role="region" aria-label="Session report"><table class="report-table"><thead><tr>${r.headings.map((v) => `<th scope="col">${esc(v)}</th>`).join("")}</tr></thead><tbody class="${r.table.length > 20 ? "capped" : ""}">${r.table.map((row) => `<tr>${row.map(cell).join("")}</tr>`).join("")}</tbody></table></div>${r.table.length > 20 ? more(r.table.length) : ""}</div>` : empty("Responses appear here once participants answer.")}`;
+  main.innerHTML = `<div class="page-head"><div>${title(r.title)}<p class="meta"><span>Session report</span><span><span>PIN</span> <b class="pin">${esc(pin)}</b></span></p></div><div class="actions">${r.markable ? link("Mark answers", "#/mark/" + pin, "button primary", "check") : ""}${link("Export CSV", "/api/" + path + "?format=csv", "button", "download")}${link("Export Excel", "/api/" + path + "?format=xlsx", "button", "download")}${btn("Print / Save PDF", "print", "", "print")}</div></div><section class="accuracy"><h2>Answer accuracy</h2>${graded.length ? `<p class="big">${num(Math.round((100 * right) / graded.length))}%</p><div><progress value="${right}" max="${graded.length}" aria-label="Answer accuracy"></progress><p>${`${right} of ${graded.length} graded responses are correct`}</p></div>` : "<p>No graded responses yet.</p>"}</section>${r.table.length ? `<div><div class="scroll" tabindex="0" role="region" aria-label="Session report"><table class="report-table"><thead><tr>${r.headings.map((v) => `<th scope="col">${esc(v)}</th>`).join("")}</tr></thead><tbody class="${r.table.length > 20 ? "capped" : ""}">${r.table.map((row) => `<tr>${row.map(cell).join("")}</tr>`).join("")}</tbody></table></div>${r.table.length > 20 ? more(r.table.length) : ""}</div>` : empty("Responses appear here once participants answer.")}`;
   actions(() => print());
 }
 async function gallery(pin, selectedPerson) {

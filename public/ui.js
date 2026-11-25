@@ -27,6 +27,7 @@ import { mark, roomFigure, cover, liveRoom } from "./room.js";
 import { num } from "./locale.js";
 import { standings, analytics, certificates } from "./engagement.js";
 import { admin } from "./admin.js";
+import { marking } from "./marking.js";
 import { editor, bank } from "./editor.js";
 import {
   launch,
@@ -61,6 +62,7 @@ const owner = {
   host: "sessions",
   "host-gallery": "sessions",
   report: "reports",
+  mark: "reports",
   analytics: "reports",
   admin: "settings",
   certificates: "settings",
@@ -81,6 +83,7 @@ const titles = {
   "host-gallery": "Session photographs",
   gallery: "Session photographs",
   report: "Session report",
+  mark: "Mark answers",
   analytics: "Session comparison",
   admin: "Platform administration",
   certificates: "Certificate builder",
@@ -443,6 +446,7 @@ async function render() {
       await stage(a, b, page === "display");
     else if (page === "results") await results(a, b);
     else if (page === "report") await report(a);
+    else if (page === "mark") await marking(a);
     else if (page === "gallery" || page === "host-gallery") await gallery(a, b);
     else if (page === "terms") {
       const brand = await api("branding");

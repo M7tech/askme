@@ -15,6 +15,9 @@ import {
   cleanAnswer,
   grade,
   released,
+  optionsOf,
+  markable,
+  markLimit,
 } from "./model.mjs";
 export const personFor = async (req, pin) =>
   one("SELECT * FROM people WHERE token=$1 AND pin=$2", [
@@ -79,9 +82,95 @@ function configuration(b) {
     team: !!b.team,
     secret: b.private ? hash(token()) : "",
     stats: false,
+    advance: b.advance === "auto" ? "auto" : "manual",
+    autoSeconds: bounded(b.autoSeconds, 5, 3600, 30),
+    autoBreak: bounded(b.autoBreak, 0, 120, 5),
   };
 }
+/** Opens the question at `position`. Automatic sessions always have a limit. */
+function opening(r, config, position, now) {
+  delete config.nextAt;
+  config.openedAt = now;
+  config.pausedMs = 0;
+  const seconds =
+    r.snapshot[position].seconds ||
+    (config.advance === "auto" ? config.autoSeconds || 30 : 0);
+  return seconds ? now + seconds * 1000 : 0;
+}
+/**
+ * One step of an automatic session. Runs under the room lock, so several API
+ * instances may call it and only the first one changes anything.
+ */
+async function advanceRoom(pin) {
+  return transaction(async (c) => {
+    const {
+      rows: [r],
+    } = await c.query("SELECT * FROM rooms WHERE pin=$1 FOR UPDATE", [pin]);
+    const now = Date.now();
+    if (
+      !r ||
+      r.config.advance !== "auto" ||
+      r.config.mode !== "live" ||
+      now >= r.config.expires
+    )
+      return false;
+    let { phase, position, deadline, config } = r;
+    if (phase === "open") {
+      const expired = Number(deadline) > 0 && now >= Number(deadline);
+      let complete = false;
+      // Waiting for everyone would cut off students who may still change.
+      if (
+        !expired &&
+        !config.changes &&
+        !config.repeat &&
+        r.snapshot[position].type !== "Slide"
+      ) {
+        const {
+          rows: [n],
+        } = await c.query(
+          "SELECT count(*)::int AS total,count(a.person)::int AS answered FROM people p LEFT JOIN answers a ON a.person=p.id AND a.q=$1 WHERE p.pin=$2",
+          [position, pin],
+        );
+        complete = n.total > 0 && n.total === n.answered;
+      }
+      if (!expired && !complete) return false;
+      phase = "closed";
+      config.expiredQuestions = [
+        ...new Set([...(config.expiredQuestions || []), position]),
+      ];
+      config.nextAt = now + (config.autoBreak ?? 5) * 1000;
+    } else if (phase === "closed" && config.nextAt && now >= config.nextAt) {
+      delete config.nextAt;
+      if (position + 1 < r.snapshot.length) {
+        position += 1;
+        phase = "open";
+        deadline = opening(r, config, position, now);
+      } else phase = "ended";
+    } else return false;
+    await c.query(
+      "UPDATE rooms SET phase=$1,position=$2,remaining=0,deadline=$3,config=$4 WHERE pin=$5",
+      [phase, position, deadline, JSON.stringify(config), pin],
+    );
+    return true;
+  });
+}
 export function installRooms(app, { auth, manage, notify, limit, audit }) {
+  let ticking = false;
+  setInterval(async () => {
+    if (ticking) return;
+    ticking = true;
+    try {
+      const due = await rows(
+        "SELECT pin FROM rooms WHERE phase IN ('open','closed') AND config->>'advance'='auto' AND config->>'mode'='live' AND (config->>'expires')::bigint>$1",
+        [Date.now()],
+      );
+      for (const { pin } of due) if (await advanceRoom(pin)) await notify(pin);
+    } catch (error) {
+      console.error(error.message);
+    } finally {
+      ticking = false;
+    }
+  }, 1000).unref();
   app.get("/api/rooms", auth, async (req, res) =>
     res.json(
       await rows(
@@ -240,6 +329,7 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
       : [];
     res.json({
       ...r,
+      now: Date.now(),
       people,
       review,
       tally: await tally(r.pin),
@@ -259,7 +349,9 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
       manage(req.user, r);
       check(
         r.phase !== "ended" ||
-          ["reveal", "stats", "feedback", "approve", "remove"].includes(action),
+          ["reveal", "stats", "feedback", "approve", "remove", "mark"].includes(
+            action,
+          ),
         "Session has ended.",
         409,
       );
@@ -287,10 +379,7 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
           );
           phase = "open";
           remaining = 0;
-          config.openedAt = now;
-          config.pausedMs = 0;
-          const seconds = r.snapshot[position].seconds;
-          deadline = seconds ? now + seconds * 1000 : 0;
+          deadline = opening(r, config, position, now);
           break;
         }
         case "pause":
@@ -323,6 +412,54 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
           break;
         case "close":
           phase = "closed";
+          if (config.advance === "auto")
+            config.nextAt = now + (config.autoBreak ?? 5) * 1000;
+          break;
+        case "mark": {
+          const q = r.snapshot[req.body.q],
+            points = req.body.points;
+          check(
+            Number.isInteger(req.body.q) && markable(q),
+            "Choose a typed answer.",
+          );
+          const max = markLimit(q);
+          check(
+            Number.isInteger(points) && points >= 0 && points <= max,
+            "Enter a number from 0 to " + max + ".",
+          );
+          const updated = await c.query(
+            "UPDATE answers a SET points=$1,correct=$2,marked=true FROM people p WHERE p.id=a.person AND p.pin=$3 AND a.person=$4 AND a.q=$5 AND a.value=$6::jsonb RETURNING a.q",
+            [
+              points,
+              points === max ? true : points === 0 ? false : null,
+              pin,
+              str(req.body.person),
+              req.body.q,
+              JSON.stringify(req.body.value),
+            ],
+          );
+          check(
+            updated.rows.length,
+            "This answer changed. Refresh before marking.",
+            409,
+          );
+          break;
+        }
+        case "hold":
+          check(config.nextAt, "The next question is not scheduled.", 409);
+          delete config.nextAt;
+          break;
+        case "auto":
+          check(config.mode === "live", "Requires a presenter-led session.");
+          config.advance = config.advance === "auto" ? "manual" : "auto";
+          delete config.nextAt;
+          if (config.advance === "auto") {
+            if (phase === "open" && !Number(deadline))
+              deadline = now + (config.autoSeconds || 30) * 1000;
+            if (phase === "closed")
+              config.nextAt = now + (config.autoBreak ?? 5) * 1000;
+          } else if (phase === "open" && !r.snapshot[position].seconds)
+            deadline = 0; // The borrowed limit goes with the setting.
           break;
         case "reveal":
           check(
@@ -335,6 +472,7 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
           config.stats = !config.stats;
           break;
         case "end":
+          delete config.nextAt;
           phase = "ended";
           break;
         case "approve-answer":
@@ -436,6 +574,9 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
       answered,
       deadline: Number(r.deadline),
       now: Date.now(),
+      advance: r.config.advance || "manual",
+      nextAt: r.config.nextAt || 0,
+      autoBreak: r.config.autoBreak ?? 5,
       photos: r.config.photography,
       rank: r.config.rank,
       consent: p?.consent,
@@ -481,7 +622,7 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
           ? []
           : q.type === "Ordering"
             ? [...q.options].sort()
-            : q.options,
+            : optionsOf(q),
         effect: r.config.graded ? "None" : q.effect,
       };
       if (a) state.response = a.value;
@@ -508,7 +649,12 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
           "SELECT a.value,count(*)::int AS n FROM answers a JOIN people p ON p.id=a.person WHERE p.pin=$1 AND a.q=$2 GROUP BY a.value ORDER BY a.value",
           [r.pin, i],
         );
-      if (r.config.stats && !pairs && q.options.length && q.type !== "Ordering")
+      if (
+        r.config.stats &&
+        !pairs &&
+        optionsOf(q).length &&
+        q.type !== "Ordering"
+      )
         state.distribution = await rows(
           "SELECT value,count(*)::int AS n FROM answers a JOIN people p ON p.id=a.person WHERE p.pin=$1 AND a.q=$2 GROUP BY value",
           [r.pin, i],
@@ -638,7 +784,7 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
           ],
         );
       await c.query(
-        "INSERT INTO answers VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(person,q) DO UPDATE SET value=EXCLUDED.value,points=EXCLUDED.points,correct=EXCLUDED.correct,elapsed=EXCLUDED.elapsed",
+        "INSERT INTO answers VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(person,q) DO UPDATE SET value=EXCLUDED.value,points=EXCLUDED.points,correct=EXCLUDED.correct,elapsed=EXCLUDED.elapsed,marked=false",
         [p.id, i, JSON.stringify(value), points, correct, elapsed],
       );
       if (r.config.release === "all") {
@@ -712,6 +858,12 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
                     : q.key,
               correct: a?.correct,
               points: a?.points || 0,
+              // Distinguishes "not marked yet" from zero points.
+              unmarked:
+                !!a &&
+                !a.marked &&
+                !q.key &&
+                ["Text answer", "Fill in the blank"].includes(q.type),
               explanation: q.explanation,
             }
           : {}),
@@ -741,18 +893,19 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
     if (canScore) {
       result.correct = answers.filter((a) => a.correct === true).length;
       result.incorrect = answers.filter((a) => a.correct === false).length;
-      const graded = r.snapshot.filter(
-        (q) =>
-          ![
-            "Poll",
-            "Rating",
-            "Word cloud",
-            "Survey",
-            "Ranking",
-            "Brainstorm",
-            "Personality",
-            "Slide",
-          ].includes(q.type),
+      const graded = r.snapshot.filter((q, i) =>
+        markable(q) && !q.key
+          ? answers.some((a) => a.q === i && a.marked)
+          : ![
+              "Poll",
+              "Rating",
+              "Word cloud",
+              "Survey",
+              "Ranking",
+              "Brainstorm",
+              "Personality",
+              "Slide",
+            ].includes(q.type),
       ).length;
       result.percentage = graded
         ? Math.round((100 * result.correct) / graded)
@@ -839,6 +992,37 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
               .map((row) => row.map(quote).join(","))
               .join("\r\n"),
         );
-    } else res.json({ title: r.title, headings, table });
+    } else
+      res.json({
+        title: r.title,
+        headings,
+        table,
+        markable: r.snapshot.some(markable),
+      });
+  });
+  app.get("/api/rooms/:pin/marking", auth, async (req, res) => {
+    const r = await getRoom(req.params.pin);
+    manage(req.user, r);
+    const answers = await rows(
+      "SELECT a.person,p.name,a.q,a.value,a.points,a.correct,a.marked FROM answers a JOIN people p ON p.id=a.person WHERE p.pin=$1 ORDER BY p.joined",
+      [r.pin],
+    );
+    res.json({
+      title: r.title,
+      questions: r.snapshot.flatMap((q, i) =>
+        markable(q)
+          ? [
+              {
+                q: i,
+                prompt: q.prompt,
+                type: q.type,
+                key: q.key,
+                max: markLimit(q),
+                answers: answers.filter((a) => a.q === i),
+              },
+            ]
+          : [],
+      ),
+    });
   });
 }

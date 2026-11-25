@@ -24,3 +24,4 @@ CREATE TABLE IF NOT EXISTS question_views(person text REFERENCES people ON DELET
 CREATE TABLE IF NOT EXISTS consent_records(id text PRIMARY KEY,person text REFERENCES people ON DELETE CASCADE,allowed boolean NOT NULL,public_allowed boolean NOT NULL,recorded bigint NOT NULL);
 CREATE INDEX IF NOT EXISTS consent_person ON consent_records(person,recorded);
 CREATE TABLE IF NOT EXISTS settings(id text PRIMARY KEY, value jsonb NOT NULL);
+ALTER TABLE answers ADD COLUMN IF NOT EXISTS marked boolean NOT NULL DEFAULT false;
