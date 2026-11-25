@@ -10,12 +10,24 @@ function translate(value) {
   const row = dictionary.get(trimmed);
   if (row) return value.replace(trimmed, row[index]);
   const patterns = [
-    [/^Question (\d+)$/, ['Question $1','السؤال $1','پرسیاری $1']],
-    [/^(\d+) questions$/, ['$1 questions','$1 أسئلة','$1 پرسیار']],
-    [/^Welcome back, (.+)\. Prepare your next activity or bring a quiz to the room\.$/, ['Welcome back, $1. Prepare your next activity or bring a quiz to the room.','مرحباً بعودتك، $1. حضّر نشاطك التالي أو قدّم اختباراً للمشاركين.','بەخێربێیتەوە، $1. چالاکییەکەی داهاتووت ئامادە بکە یان تاقیکردنەوەیەک پێشکەش بکە.']]
+    [/^Pair (\d+)$/, ["Pair $1", "الزوج $1", "جووتی $1"]],
+    [/^Question (\d+)$/, ["Question $1", "السؤال $1", "پرسیاری $1"]],
+    [/^(\d+) questions$/, ["$1 questions", "$1 أسئلة", "$1 پرسیار"]],
+    [
+      /^Welcome back, (.+)\. Prepare your next activity or bring a quiz to the room\.$/,
+      [
+        "Welcome back, $1. Prepare your next activity or bring a quiz to the room.",
+        "مرحباً بعودتك، $1. حضّر نشاطك التالي أو قدّم اختباراً للمشاركين.",
+        "بەخێربێیتەوە، $1. چالاکییەکەی داهاتووت ئامادە بکە یان تاقیکردنەوەیەک پێشکەش بکە.",
+      ],
+    ],
   ];
-  for(const [pattern,translations] of patterns){
-    if(pattern.test(trimmed))return value.replace(trimmed,trimmed.replace(pattern,translations[index]));
+  for (const [pattern, translations] of patterns) {
+    if (pattern.test(trimmed))
+      return value.replace(
+        trimmed,
+        trimmed.replace(pattern, translations[index]),
+      );
   }
   const match = /^([＋↑↓←]?\s*)(.*?)(\s*[→↗])$/.exec(trimmed);
   if (match && dictionary.has(match[2]))

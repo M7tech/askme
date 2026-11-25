@@ -61,13 +61,23 @@ export function cleanQuiz(body) {
       body.questions.length <= 200,
     "Use between 1 and 200 questions.",
   );
-  const questions = body.questions.map((q) => {
+  const questions = body.questions.map((q, questionIndex) => {
     check(
       q && formats.includes(q.type) && str(q.prompt, 2000),
       "Choose a format and enter the question.",
     );
     const options = Array.isArray(q.options)
-      ? q.options.map((o) => str(o, 400)).slice(0, 12)
+      ? q.options
+          .map((o) => {
+            const value = str(o, 400);
+            return ["Matching", "Drag and drop"].includes(q.type)
+              ? value
+                  .split("|")
+                  .map((part) => part.trim())
+                  .join("|")
+              : value;
+          })
+          .slice(0, 12)
       : [];
     if (choices.includes(q.type))
       check(
@@ -85,7 +95,7 @@ export function cleanQuiz(body) {
               o.split("|").length === 2 && o.split("|").every((s) => s.trim()),
           ) &&
           new Set(options.map((o) => o.split("|")[0])).size === options.length,
-        "Use unique label|target pairs.",
+        `Question ${questionIndex + 1} needs at least two complete matching pairs. Enter a different label for each pair and fill in every matching target.`,
       );
     if (q.type === "Image hotspot")
       check(

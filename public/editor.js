@@ -63,6 +63,26 @@ const fresh = () => ({
   explanation: "",
   reference: "",
 });
+function matchingFields(q) {
+  const pairs = Array.from(
+    { length: Math.max(2, q.options.length) },
+    (_, index) => {
+      const [label = "", ...target] = (q.options[index] || "").split("|");
+      return { label, target: target.join("|") };
+    },
+  );
+  return (
+    '<section class="stack"><h3>Matching pairs</h3>' +
+    pairs
+      .map(
+        (pair, index) =>
+          `<fieldset class="stack" data-pair><legend>Pair ${index + 1}</legend><div class="fields">${field("Label", "pairLabel" + index, pair.label, "text", 'data-label maxlength="180"')}${field("Matching target", "pairTarget" + index, pair.target, "text", 'data-target maxlength="180"')}</div>${pairs.length > 2 ? btn("Remove pair", "pair-remove-" + index) : ""}</fieldset>`,
+      )
+      .join("") +
+    (pairs.length < 12 ? btn("Add pair", "pair-add") : "") +
+    "</section>"
+  );
+}
 async function editor(key, index, kind = "quiz") {
   const deck = kind === "presentation";
   const editorRoute = deck ? "presentation/" : "editor/";
@@ -136,6 +156,16 @@ async function editor(key, index, kind = "quiz") {
     if (v.options !== undefined)
       q.options = v.options.split("\n").map((s) => s.trim());
     if (v.key !== undefined) q.key = v.key;
+    if (
+      ["Matching", "Drag and drop"].includes(q.type) &&
+      f.querySelector("[data-pair]")
+    )
+      q.options = [...f.querySelectorAll("[data-pair]")]
+        .map((row) => [
+          row.querySelector("[data-label]").value.trim(),
+          row.querySelector("[data-target]").value.trim(),
+        ])
+        .map((pair) => pair.join("|"));
   }
   function draft() {
     localStorage.setItem(local, JSON.stringify({ doc, version: version || 0 }));
@@ -180,7 +210,7 @@ async function editor(key, index, kind = "quiz") {
     const q = doc.questions[idx];
     main.innerHTML =
       tabs(deck ? "presentations" : "library") +
-      `<div class="row">${title(deck ? "Presentation studio" : "Quiz studio")}<span class="pill" id="saved">${version ? "Saved quiz" : "Local draft"}</span></div><div class="actions">${btn(deck ? "Save presentation" : "Save quiz", "save", "primary")}${btn("Launch session →", "launch")}${btn("Undo", "undo")}${btn("Redo", "redo")}${btn("Preview", "preview")}</div><form novalidate id="edit"><div class="panel fields">${field(deck ? "Presentation title" : "Quiz title", "title", doc.title, "text", 'required maxlength="200"')}${field("Category", "category", doc.category)}</div><div class="split"><section class="panel stack"><div class="row"><h2>Question ${idx + 1}</h2>${select("Format", "type", types, q.type)}</div>${area("Question (Markdown and $math$ supported)", "prompt", q.prompt)}<label>Question media (shared with participants)<input type="file" id="asset" accept="image/*,video/mp4,video/webm,audio/*"></label>${q.asset ? "<p>Attached " + esc(q.asset.mime) + "</p>" + btn("Remove attachment", "detach") : ""}${optionsTypes.includes(q.type) ? area(["Matching", "Drag and drop"].includes(q.type) ? "One label|target pair per line" : q.type === "Ordering" ? "Options in correct order, one per line" : "Answer options, one per line", "options", q.options.join("\n")) : ""}${["Single choice", "Multiple choice", "True or false", "Text answer", "Fill in the blank", "Numeric", "Image hotspot"].includes(q.type) ? field(q.type === "Image hotspot" ? "Target X,Y,radius (0–100%)" : q.type === "Multiple choice" ? "Correct options, separated by |" : "Correct answer", "key", q.key) : ""}<div class="fields">${field("Time limit in seconds (0 for untimed)", "seconds", q.seconds, "number", 'min="0" max="3600"')}${field("Points", "points", q.points, "number", 'min="0" max="10000"')}</div>${area("Explanation", "explanation", q.explanation)}${field("Reference", "reference", q.reference)}<details><summary>Multilingual wording</summary><div class="stack">${area("السؤال بالعربية", "arPrompt", q.translations?.ar?.prompt)}${area("الشرح بالعربية", "arExplanation", q.translations?.ar?.explanation)}${area("پرسیار بە کوردی", "ckbPrompt", q.translations?.ckb?.prompt)}${area("ڕوونکردنەوە بە کوردی", "ckbExplanation", q.translations?.ckb?.explanation)}</div></details>${select("Answer effect for informal sessions", "effect", ["None", "Float", "Bounce", "Shake", "Run away", "Vertical", "Escape and return", "Random"], q.effect)}<details><summary>Effect settings</summary><p>Moving a particular answer can hint at the solution. Graded sessions disable these effects.</p><div class="fields">${field("Movements", "moves", q.moves || 1, "number", 'min="1" max="3"')}${field("Intensity", "intensity", q.intensity || 2, "number", 'min="1" max="5"')}${field("Duration (ms)", "duration", q.duration || 450, "number", 'min="150" max="1500"')}${field("Target option index (−1 for all)", "target", q.target ?? -1, "number", 'min="-1" max="11"')}</div></details>${select("Difficulty", "difficulty", ["Introductory", "Standard", "Advanced"], q.difficulty || "Standard")}${field("Tags", "tags", q.tags || "")}</section><aside class="panel stack"><h2>Questions</h2><div class="list">${doc.questions.map((v, n) => `<div draggable="true" data-index="${n}">${btn(n + 1 + ". " + (v.prompt || "Untitled question"), "q-" + n, idx === n ? "primary" : "")}</div>`).join("")}</div>${btn("＋ Add question", "add")}${btn("Duplicate question", "duplicate")}<div class="actions">${btn("↑ Move", "up")}${btn("↓ Move", "down")}</div>${doc.questions.length > 1 ? btn("Remove question", "remove", "danger") : ""}${btn("Insert from question bank", "pickbank")}<div id="bankpick"></div></aside></div></form><section class="panel"><details><summary>Import, export and manage quiz</summary><div class="stack"><p>Review imported questions in the editor before launching. CSV and Excel columns include prompt, type, options and key. Separate options with |. In Word and PDF, start each question with Q:, list options as A. and B., then add Answer: A. Imported text requires review.</p><label>Import JSON, CSV, Excel, Word or PDF<input type="file" id="import" accept=".json,.csv,.xlsx,.docx,.pdf"></label><div class="actions">${btn("Export quiz JSON", "export")}${isExisting ? btn("Duplicate quiz", "copy") + btn("Delete quiz", "delete", "danger") : ""}</div><div id="confirm"></div></div></details></section>${ai.enabled ? '<section class="panel"><form novalidate class="stack" id="ai"><h2>Generate a draft</h2>' + area("Learning objective or source text", "topic") + "<button>Generate for review</button></form></section>" : ""}<div id="preview"></div>`;
+      `<div class="row">${title(deck ? "Presentation studio" : "Quiz studio")}<span class="pill" id="saved">${version ? "Saved quiz" : "Local draft"}</span></div><div class="actions">${btn(deck ? "Save presentation" : "Save quiz", "save", "primary")}${btn("Launch session →", "launch")}${btn("Undo", "undo")}${btn("Redo", "redo")}${btn("Preview", "preview")}</div><form novalidate id="edit"><div class="panel fields">${field(deck ? "Presentation title" : "Quiz title", "title", doc.title, "text", 'required maxlength="200"')}${field("Category", "category", doc.category)}</div><div class="split"><section class="panel stack"><div class="row"><h2>Question ${idx + 1}</h2>${select("Format", "type", types, q.type)}</div>${area("Question (Markdown and $math$ supported)", "prompt", q.prompt)}<label>Question media (shared with participants)<input type="file" id="asset" accept="image/*,video/mp4,video/webm,audio/*"></label>${q.asset ? "<p>Attached " + esc(q.asset.mime) + "</p>" + btn("Remove attachment", "detach") : ""}${["Matching", "Drag and drop"].includes(q.type) ? matchingFields(q) : optionsTypes.includes(q.type) ? area(q.type === "Ordering" ? "Options in correct order, one per line" : "Answer options, one per line", "options", q.options.join("\n")) : ""}${["Single choice", "Multiple choice", "True or false", "Text answer", "Fill in the blank", "Numeric", "Image hotspot"].includes(q.type) ? field(q.type === "Image hotspot" ? "Target X,Y,radius (0–100%)" : q.type === "Multiple choice" ? "Correct options, separated by |" : "Correct answer", "key", q.key) : ""}<div class="fields">${field("Time limit in seconds (0 for untimed)", "seconds", q.seconds, "number", 'min="0" max="3600"')}${field("Points", "points", q.points, "number", 'min="0" max="10000"')}</div>${area("Explanation", "explanation", q.explanation)}${field("Reference", "reference", q.reference)}<details><summary>Multilingual wording</summary><div class="stack">${area("السؤال بالعربية", "arPrompt", q.translations?.ar?.prompt)}${area("الشرح بالعربية", "arExplanation", q.translations?.ar?.explanation)}${area("پرسیار بە کوردی", "ckbPrompt", q.translations?.ckb?.prompt)}${area("ڕوونکردنەوە بە کوردی", "ckbExplanation", q.translations?.ckb?.explanation)}</div></details>${select("Answer effect for informal sessions", "effect", ["None", "Float", "Bounce", "Shake", "Run away", "Vertical", "Escape and return", "Random"], q.effect)}<details><summary>Effect settings</summary><p>Moving a particular answer can hint at the solution. Graded sessions disable these effects.</p><div class="fields">${field("Movements", "moves", q.moves || 1, "number", 'min="1" max="3"')}${field("Intensity", "intensity", q.intensity || 2, "number", 'min="1" max="5"')}${field("Duration (ms)", "duration", q.duration || 450, "number", 'min="150" max="1500"')}${field("Target option index (−1 for all)", "target", q.target ?? -1, "number", 'min="-1" max="11"')}</div></details>${select("Difficulty", "difficulty", ["Introductory", "Standard", "Advanced"], q.difficulty || "Standard")}${field("Tags", "tags", q.tags || "")}</section><aside class="panel stack"><h2>Questions</h2><div class="list">${doc.questions.map((v, n) => `<div draggable="true" data-index="${n}">${btn(n + 1 + ". " + (v.prompt || "Untitled question"), "q-" + n, idx === n ? "primary" : "")}</div>`).join("")}</div>${btn("＋ Add question", "add")}${btn("Duplicate question", "duplicate")}<div class="actions">${btn("↑ Move", "up")}${btn("↓ Move", "down")}</div>${doc.questions.length > 1 ? btn("Remove question", "remove", "danger") : ""}${btn("Insert from question bank", "pickbank")}<div id="bankpick"></div></aside></div></form><section class="panel"><details><summary>Import, export and manage quiz</summary><div class="stack"><p>Review imported questions in the editor before launching. CSV and Excel columns include prompt, type, options and key. Separate options with |. In Word and PDF, start each question with Q:, list options as A. and B., then add Answer: A. Imported text requires review.</p><label>Import JSON, CSV, Excel, Word or PDF<input type="file" id="import" accept=".json,.csv,.xlsx,.docx,.pdf"></label><div class="actions">${btn("Export quiz JSON", "export")}${isExisting ? btn("Duplicate quiz", "copy") + btn("Delete quiz", "delete", "danger") : ""}</div><div id="confirm"></div></div></details></section>${ai.enabled ? '<section class="panel"><form novalidate class="stack" id="ai"><h2>Generate a draft</h2>' + area("Learning objective or source text", "topic") + "<button>Generate for review</button></form></section>" : ""}<div id="preview"></div>`;
     const f = $("#edit");
     f.onsubmit = (e) => e.preventDefault();
     f.onfocusin = (e) => {
@@ -318,6 +348,20 @@ async function editor(key, index, kind = "quiz") {
           0,
           structuredClone(source.document[Number($("[name=bankIndex]").value)]),
         );
+        draw();
+        changed();
+        return;
+      }
+      if (a === "pair-add") {
+        checkpoint();
+        q.options.push("|");
+        draw();
+        changed();
+        return;
+      }
+      if (a.startsWith("pair-remove-")) {
+        checkpoint();
+        q.options.splice(Number(a.slice(12)), 1);
         draw();
         changed();
         return;

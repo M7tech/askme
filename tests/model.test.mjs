@@ -57,3 +57,24 @@ test("salted passwords verify and differ", async () => {
   assert.equal(await password("wrong", p), false);
   assert.notEqual(await password("test-only passphrase"), p);
 });
+
+test("matching pairs normalize spacing and reject duplicate or incomplete labels", () => {
+  const quiz = {
+    title: "Pairs",
+    questions: [
+      {
+        type: "Matching",
+        prompt: "Match",
+        options: [" Sky | Blue ", " Grass | Green "],
+      },
+    ],
+  };
+  assert.deepEqual(cleanQuiz(quiz).questions[0].options, [
+    "Sky|Blue",
+    "Grass|Green",
+  ]);
+  quiz.questions[0].options = ["Sky|Blue", " Sky |Grey"];
+  assert.throws(() => cleanQuiz(quiz), /Question 1 needs/);
+  quiz.questions[0].options = ["Sky|Blue", "Grass|"];
+  assert.throws(() => cleanQuiz(quiz), /fill in every matching target/);
+});
