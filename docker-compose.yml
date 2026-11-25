@@ -6,7 +6,11 @@ x-api: &api
   environment:
     NODE_ENV: production
     PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN}
-    DATABASE_URL: postgres://chorus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db/chorus
+    PGHOST: db
+    PGPORT: 5432
+    PGDATABASE: chorus
+    PGUSER: chorus
+    PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     REDIS_URL: redis://redis:6379
     RETENTION_DAYS: ${RETENTION_DAYS:-90}
     SMTP_URL: ${SMTP_URL:-}

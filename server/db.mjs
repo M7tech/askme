@@ -3,8 +3,9 @@ import path from "node:path";
 import os from "node:os";
 import pg from "pg";
 const url = process.env.DATABASE_URL;
+const external = Boolean(url || process.env.PGHOST);
 let db;
-if (url) db = new pg.Pool({ connectionString: url });
+if (external) db = new pg.Pool(url ? { connectionString: url } : {});
 else {
   const { PGlite } = await import("@electric-sql/pglite");
   const dir = path.resolve(
@@ -14,7 +15,7 @@ else {
   db = new PGlite(dir);
 }
 export async function transaction(fn) {
-  if (!url) return db.transaction(fn);
+  if (!external) return db.transaction(fn);
   const conn = await db.connect();
   try {
     await conn.query("BEGIN");
@@ -32,7 +33,7 @@ export const rows = async (sql, params = []) =>
   (await db.query(sql, params)).rows;
 export const one = async (...args) => (await rows(...args))[0];
 await transaction(async (conn) => {
-  if (url) await conn.query("SELECT pg_advisory_xact_lock(584230)");
+  if (external) await conn.query("SELECT pg_advisory_xact_lock(584230)");
   const sql = await fs.readFile(
     new URL("../migrations/001.sql", import.meta.url),
     "utf8",

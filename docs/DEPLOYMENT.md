@@ -13,6 +13,8 @@ For Google Workspace mail, leave SMTP_URL empty and set SMTP_HOST=smtp.gmail.com
 
 ## Initialization and maintenance
 
+The Compose API and worker connect using PGHOST, PGPORT, PGDATABASE, PGUSER and PGPASSWORD. This accepts database passwords without embedding them in a URL. DATABASE_URL remains available for custom deployments with an encoded connection URL.
+
 The API and worker apply the idempotent SQL migration in a transaction. An advisory lock serializes migrations on PostgreSQL. To apply the current schema independently after the database is healthy:
 
 ```sh
