@@ -1,3 +1,4 @@
+import { icon } from "./icons.js";
 const messages = {
   join: ["Join session", "انضم إلى الجلسة", "بەشداری لە دانیشتنەکە بکە"],
   name: ["Your name", "اسمك", "ناوت"],
@@ -111,7 +112,9 @@ const tr = (k) => messages[k]?.[locales.indexOf(locale())] || k;
 const num = (n) => new Intl.NumberFormat(locale()).format(n);
 function chooseLanguage() {
   return (
-    '<label class="language">Language · اللغة · زمان<select id="language">' +
+    '<label class="language">' +
+    icon("globe") +
+    '<span class="sr">Language · اللغة · زمان</span><select id="language">' +
     [
       ["en", "English"],
       ["ar", "العربية"],

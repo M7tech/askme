@@ -4,24 +4,30 @@ import {
   esc,
   $,
   all,
-  formData,
   link,
   btn,
+  submitButton,
   field,
   area,
   select,
   check,
   go,
   notice,
+  confirmAction,
+  busy,
   api,
   submit,
   actions,
-  saveFile,
   title,
-  tabs,
+  pageHead,
+  empty,
+  chip,
+  capped,
+  more,
   storageKey,
-  demo,
+  icon,
 } from "./shared.js";
+import { mark, roomFigure, tally } from "./room.js";
 let closeLive = () => {};
 function roomCleanup() {
   closeLive();
@@ -77,7 +83,7 @@ function watch(pin, fn) {
     try {
       await fn();
     } catch (e) {
-      notice(e.message);
+      notice(e.message, "error");
     } finally {
       busy = false;
       if (again) {
@@ -113,47 +119,63 @@ function watch(pin, fn) {
     ws.close();
   };
 }
+const group = (heading, body) =>
+  `<section class="setting"><h2>${esc(heading)}</h2><div class="stack">${body}</div></section>`;
+const switches = (list) =>
+  `<div class="switches">${list.map((v) => check(...v)).join("")}</div>`;
 async function launch(id) {
   const q = await api("quizzes/" + id);
-  main.innerHTML =
-    tabs("sessions") +
-    title("Launch a session", q.title) +
-    `<form novalidate class="panel stack" id="launch"><div class="fields">${select(
-      "Participation mode",
-      "mode",
-      [
+  main.innerHTML = `${pageHead("Launch a session", q.title)}<form novalidate id="launch" class="launch">${
+    group(
+      "Participation",
+      `<div class="fields">${select("Participation mode", "mode", [
         ["live", "Presenter-led live"],
         ["self", "Self-paced"],
-      ],
-    )}${select("Release correct answers", "release", [
-      ["manual", "When I reveal them"],
-      ["immediate", "After submission"],
-      ["timer", "When time expires"],
-      ["all", "After everyone answers"],
-      ["end", "After the session ends"],
-      ["scheduled", "On a scheduled date"],
-      ["never", "Never"],
-    ])}</div><div id="date"></div><div class="fields">${field("Scheduled opening (optional)", "starts", "", "datetime-local")}${select("Entertainment mode", "style", ["Professional", "Fun", "Party"])}${select("Competition display", "game", ["Leaderboard", "Car racing", "Space racing", "Horse racing", "Balloon race", "Mountain climb", "Treasure hunt", "Quiz battle"])}</div><div class="fields">${field("Participant limit", "max", 500, "number", 'min="1" max="10000" required')}${field("Expires in days", "days", 7, "number", 'min="1" max="365" required')}</div><div class="fields">${[
-      ["Anonymous participation", "anonymous"],
-      ["Private access phrase", "private"],
-      ["Allow late joining", "late", true],
-      ["Allow changes before release", "changes"],
-      ["Keep multiple attempts (latest counts)", "repeat"],
-      ["Enable leaderboard", "rank"],
-      ["Enable teams", "team"],
-      ["Speed bonus", "speed"],
-      ["Negative marking", "negative"],
-      ["Graded assessment (disables effects)", "graded", true],
-      ["Completion certificates", "certificate"],
-      ["Consent-based photography", "photography"],
-      ["Require verified guardian authorization for photos", "guardian"],
-      ["Shuffle questions", "randomQuestions"],
-      ["Shuffle choices", "randomAnswers"],
-    ]
-      .map((v) => check(...v))
-      .join(
-        "",
-      )}</div><div id="phrase"></div><button class="primary">Create session</button></form>`;
+      ])}${field("Scheduled opening (optional)", "starts", "", "datetime-local")}</div><div class="fields">${field("Participant limit", "max", 500, "number", 'min="1" max="10000" required')}${field("Expires in days", "days", 7, "number", 'min="1" max="365" required')}</div>${switches(
+        [
+          ["Anonymous participation", "anonymous"],
+          ["Private access phrase", "private"],
+          ["Allow late joining", "late", true],
+        ],
+      )}<div id="phrase"></div>`,
+    ) +
+    group(
+      "Answers",
+      `${select("Release correct answers", "release", [
+        ["manual", "When I reveal them"],
+        ["immediate", "After submission"],
+        ["timer", "When time expires"],
+        ["all", "After everyone answers"],
+        ["end", "After the session ends"],
+        ["scheduled", "On a scheduled date"],
+        ["never", "Never"],
+      ])}<div id="date"></div>${switches([
+        ["Allow changes before release", "changes"],
+        ["Keep multiple attempts (latest counts)", "repeat"],
+        ["Shuffle questions", "randomQuestions"],
+        ["Shuffle choices", "randomAnswers"],
+      ])}`,
+    ) +
+    group(
+      "Scoring",
+      switches([
+        ["Graded assessment (disables effects)", "graded", true],
+        ["Enable leaderboard", "rank"],
+        ["Enable teams", "team"],
+        ["Speed bonus", "speed"],
+        ["Negative marking", "negative"],
+        ["Completion certificates", "certificate"],
+      ]) +
+        `<div class="fields">${select("Entertainment mode", "style", ["Professional", "Fun", "Party"])}${select("Competition display", "game", ["Leaderboard", "Car racing", "Space racing", "Horse racing", "Balloon race", "Mountain climb", "Treasure hunt", "Quiz battle"])}</div>`,
+    ) +
+    group(
+      "Photographs",
+      switches([
+        ["Consent-based photography", "photography"],
+        ["Require verified guardian authorization for photos", "guardian"],
+      ]),
+    )
+  }<div class="commit">${submitButton("Create session", "primary", "play")}${link("Back to quiz", (q.kind === "presentation" ? "#/presentation/" : "#/editor/") + id, "button quiet")}</div></form>`;
   $("[name=private]").onchange = (e) =>
     ($("#phrase").innerHTML = e.target.checked
       ? field(
@@ -161,7 +183,7 @@ async function launch(id) {
           "passcode",
           "",
           "password",
-          'required minlength="8"',
+          'required minlength="8" autocomplete="off"',
         )
       : "");
   $("[name=release]").onchange = (e) =>
@@ -184,10 +206,41 @@ async function launch(id) {
     go("host/" + r.pin);
   });
 }
+const qrImage = (pin, q) =>
+  `<img class="qr" width="220" height="220" src="/api/rooms/${esc(pin)}/qr/svg${q === undefined ? "" : "?q=" + q}" alt="QR code to join session ${esc(pin)}">`;
 function qr(pin, q) {
   const base = "/api/rooms/" + pin + "/qr/",
     query = q === undefined ? "" : "?q=" + q;
-  return `<img class="qr" src="${base}svg${query}" alt="QR code to join session ${esc(pin)}"><div class="actions"><a download="session-${pin}.png" class="button" href="${base}png${query}">Download PNG</a><a download="session-${pin}.svg" class="button" href="${base}svg${query}">Download SVG</a></div>`;
+  return `${qrImage(pin, q)}<div class="actions"><a download="session-${pin}.png" class="button small" href="${base}png${query}">${icon("download")}<span>Download PNG</span></a><a download="session-${pin}.svg" class="button small" href="${base}svg${query}">${icon("download")}<span>Download SVG</span></a></div>`;
+}
+/* Polling redraws must not close an open participant or drop typed feedback. */
+function holdDrafts(scope) {
+  const open = all(scope + " details[open][data-key]").map(
+      (d) => d.dataset.key,
+    ),
+    drafts = all(scope + " textarea[data-key]")
+      .filter((t) => t.value !== t.defaultValue)
+      .map((t) => [t.dataset.key, t.value]),
+    expanded = $(scope + " .list") && !$(scope + " .capped"),
+    active = document.activeElement,
+    focus = active?.dataset?.key,
+    at = active?.selectionStart;
+  return () => {
+    for (const key of open) {
+      const d = $(`${scope} details[data-key="${CSS.escape(key)}"]`);
+      if (d) d.open = true;
+    }
+    for (const [key, value] of drafts) {
+      const t = $(`${scope} textarea[data-key="${CSS.escape(key)}"]`);
+      if (t) t.value = value;
+    }
+    if (expanded) $(scope + " [data-more]")?.click();
+    if (focus && active.tagName === "TEXTAREA") {
+      const t = $(`${scope} textarea[data-key="${CSS.escape(focus)}"]`);
+      t?.focus();
+      t?.setSelectionRange(at, at);
+    }
+  };
 }
 async function host(pin) {
   const path = "rooms/" + pin + "/";
@@ -197,53 +250,106 @@ async function host(pin) {
     if (location.hash !== "#/host/" + pin) return;
     const json = JSON.stringify(r);
     if (last === json) return;
+    const focused =
+      document.activeElement?.closest?.("[data-action]")?.dataset.action;
+    const restore = holdDrafts("#people");
     last = json;
-    main.innerHTML =
-      tabs("sessions") +
-      `<div class="row">${title(r.title)}<span class="pill">${esc(r.phase)}</span></div><div class="actions"><a href="#/display/${pin}" class="button primary" target="_blank" rel="noopener">Open projector ↗</a>${link("Session report", "#/report/" + pin)}${r.config.rank ? link("Competition display", "#/standings/" + pin) : ""}${r.config.photography ? link(tr("gallery"), "#/host-gallery/" + pin) : ""}</div><div class="split"><section class="panel stack"><span class="eyebrow">Presenter controls · ${r.position + 1} / ${r.snapshot.length}</span><h2>${esc(r.snapshot[r.position].prompt)}</h2><p>${r.tally.find((v) => v.q === r.position)?.total || 0} of ${r.people.length} participants answered</p><div class="actions">${r.phase === "waiting" ? btn("Start session", "start", "primary") : r.phase === "ended" ? "" : (r.phase === "open" ? btn("Pause", "pause") + btn("Close answering", "close") + (Number(r.deadline) ? btn("＋15 seconds", "extend") : "") : "") + (r.phase === "paused" ? btn("Resume", "resume", "primary") : "") + (r.position > 0 ? btn("← Previous", "previous") : "") + (r.position + 1 < r.snapshot.length ? btn("Next question →", "next", "primary") : "")}${r.config.release === "manual" && !r.revealed.includes(r.position) ? btn("Reveal answer", "reveal") : ""}${btn(r.config.stats ? "Hide statistics" : "Show statistics", "stats")}${r.phase !== "ended" ? btn("End session", "ask-end", "danger") : ""}</div><div id="end"></div><h3>Participants</h3>${r.people.map((p) => `<details><summary>${esc(p.name)} ${esc(p.team)}</summary><form novalidate class="feedback stack" data-id="${esc(p.id)}">${area("Private feedback", "feedback", p.feedback)}<button>Save feedback</button></form>${btn("Remove participant", "ask-remove-" + p.id, "danger")}<div id="remove-${p.id}"></div></details>`).join("") || "<p>Share the PIN or QR code to invite participants.</p>"}${r.review.length ? "<h3>Review text responses</h3>" + r.review.map((v, i) => `<div class="listitem">${esc(v.value)}${btn("Approve for display", "text:" + i)}</div>`).join("") : ""}<h3>Audience moderation</h3>${
-        r.messages
-          .filter((m) => !m.approved)
-          .map(
-            (m) =>
-              `<div class="listitem">${esc(m.body)}${btn("Approve", "approve-" + m.id)}</div>`,
+    const answered = r.tally.find((v) => v.q === r.position)?.total || 0,
+      pending = r.messages.filter((m) => !m.approved);
+    const step =
+      r.phase === "waiting"
+        ? btn("Start session", "start", "sun", "play")
+        : r.phase === "ended"
+          ? ""
+          : (r.phase === "paused"
+              ? btn("Resume", "resume", "sun", "play")
+              : "") +
+            (r.position > 0 ? btn("Previous", "previous", "", "prev") : "") +
+            (r.position + 1 < r.snapshot.length
+              ? btn(
+                  "Next question",
+                  "next",
+                  r.phase === "paused" ? "" : "sun",
+                  "",
+                  "next",
+                )
+              : "") +
+            (r.phase === "open"
+              ? btn("Pause", "pause", "", "pause") +
+                btn("Close answering", "close", "", "lock") +
+                (Number(r.deadline)
+                  ? btn("Add 15 seconds", "extend", "", "clock")
+                  : "")
+              : "");
+    main.innerHTML = `<div class="page-head"><div class="with-chip">${title(r.title)}${chip(r.phase)}</div><div class="actions"><a href="#/display/${pin}" class="button primary" target="_blank" rel="noopener"><span>Open projector</span>${icon("external")}</a>${link("Session report", "#/report/" + pin, "button", "reports")}${r.config.rank ? link("Competition display", "#/standings/" + pin, "button", "trophy") : ""}${r.config.photography ? link(tr("gallery"), "#/host-gallery/" + pin, "button", "camera") : ""}</div></div><div class="console"><div class="console-main"><section class="podium board" aria-label="Presenter controls"><p class="meta"><span>${`Question ${r.position + 1} of ${r.snapshot.length}`}</span><span>${esc(r.snapshot[r.position].type)}</span></p><h2 translate="no" dir="auto">${esc(r.snapshot[r.position].prompt)}</h2><div class="answered"><p><strong>${num(answered)}</strong> <span>${`of ${r.people.length} participants answered`}</span></p>${tally(answered, r.people.length, "Responses")}</div><div class="actions">${step}</div><div class="actions secondary">${r.config.release === "manual" && !r.revealed.includes(r.position) ? btn("Reveal answer", "reveal", "", "eye") : ""}${btn(r.config.stats ? "Hide statistics" : "Show statistics", "stats", "", "chart")}${r.phase !== "ended" ? btn("End session", "ask-end", "end danger", "stop") : ""}</div></section>${r.review.length ? `<section class="block"><h2>Review text responses</h2><div class="list">${r.review.map((v, i) => `<div class="listitem"><p translate="no" dir="auto">${esc(v.value)}</p>${btn("Approve for display", "text:" + i, "small", "check")}</div>`).join("")}</div></section>` : ""}<section class="block"><h2>Audience moderation</h2>${
+      pending.length
+        ? `<div class="list">${pending.map((m) => `<div class="listitem"><p translate="no" dir="auto">${esc(m.body)}</p>${btn("Approve", "approve-" + m.id, "small", "check")}</div>`).join("")}</div>`
+        : empty("No questions awaiting approval.")
+    }</section><section class="block" id="people"><h2>Participants</h2>${
+      r.people.length
+        ? capped(
+            r.people.map(
+              (p) =>
+                `<details class="person" data-key="${esc(p.id)}"><summary>${icon("chevron")}<strong translate="no" dir="auto">${esc(p.name)}</strong>${p.team ? `<span class="chip" translate="no">${esc(p.team)}</span>` : ""}</summary><form novalidate class="feedback stack" data-id="${esc(p.id)}">${area("Private feedback", "feedback", p.feedback, `data-key="t${esc(p.id)}"`)}<div class="actions">${submitButton("Save feedback", "small")}${btn("Remove participant", "ask-remove-" + p.id, "small quiet danger", "trash")}</div></form></details>`,
+            ),
           )
-          .join("") || "<p>No questions awaiting approval.</p>"
-      }</section><aside class="panel stage"><p>Participation PIN</p><strong class="large">${esc(pin)}</strong>${qr(pin)}${link("Participation link ↗", "#/join/" + pin)}${r.config.mode === "self" ? `<details><summary>Question links</summary>${r.snapshot.map((q, i) => `<p>${link("Question " + (i + 1), "#/join/" + pin + "/" + i)}</p>${qr(pin, i)}`).join("")}</details>` : ""}</aside></div>`;
+        : empty("Share the PIN or QR code to invite participants.")
+    }</section></div><aside class="invite"><p>Participation PIN</p><strong class="pin">${esc(pin)}</strong>${qr(pin)}${link("Participation link", "#/join/" + pin, "textlink", "link")}${r.config.mode === "self" ? `<details><summary>${icon("chevron")}<span>Question links</span></summary>${r.snapshot.map((q, i) => `<div class="qlink">${link("Question " + (i + 1), "#/join/" + pin + "/" + i, "textlink")}${qr(pin, i)}</div>`).join("")}</details>` : ""}</aside></div>`;
+    restore();
+    if (focused)
+      $(`[data-action="${CSS.escape(focused)}"]`)?.focus({
+        preventScroll: true,
+      });
     all(".feedback").forEach((f) => {
-      f.onsubmit = async (e) => {
+      f.onsubmit = (e) => {
         e.preventDefault();
-        try {
+        busy(e.submitter, async () => {
           await api(path + "control", "POST", {
             action: "feedback",
             person: f.dataset.id,
             feedback: f.feedback.value,
           });
+          f.feedback.defaultValue = f.feedback.value;
           notice("Feedback saved.");
-        } catch (err) {
-          notice(err.message);
-        }
+        });
       };
     });
     actions(async (a) => {
-      if (a === "ask-end") {
-        $("#end").innerHTML =
-          "<p>End answering for everyone?</p>" +
-          btn("Confirm end session", "end", "danger");
-        return;
-      }
-      if (a.startsWith("ask-remove-")) {
-        const who = a.slice(11);
-        $("#remove-" + who).innerHTML = btn(
-          "Confirm removal and erase responses",
-          "remove-" + who,
-          "danger",
-        );
-        return;
-      }
       if (a.startsWith("text:")) {
         const v = r.review[Number(a.slice(5))];
         await api(path + "control", "POST", { action: "approve-answer", ...v });
         await draw();
+        return;
+      }
+      if (a === "ask-end") {
+        if (
+          await confirmAction(
+            "End this session?",
+            "Answering closes for everyone.",
+            "End session",
+          )
+        ) {
+          await api(path + "control", "POST", { action: "end" });
+          await draw();
+        }
+        return;
+      }
+      if (a.startsWith("ask-remove-")) {
+        const person = a.slice(11);
+        if (
+          await confirmAction(
+            "Remove this participant?",
+            "Their responses are erased and cannot be recovered.",
+            "Remove participant",
+          )
+        ) {
+          await api(path + "control", "POST", {
+            action: "remove",
+            person,
+            message: person,
+          });
+          await draw();
+        }
         return;
       }
       const [act, ...rest] = a.split("-");
@@ -264,7 +370,7 @@ async function join(pin, q) {
   const info = await api("rooms/" + pin + "/info"),
     saved = localStorage.getItem(storageKey(pin)),
     play = "play/" + pin + "/" + (Number(q) || 0);
-  main.innerHTML = `<section class="narrow panel stack">${chooseLanguage()}<span class="pill">${tr("session")} ${esc(pin)}</span>${title(info.title)}${saved ? link(tr("continue"), "#/" + play, "button primary") + link(tr("results"), "#/results/" + pin + "/" + localStorage.getItem("chorus.results." + pin)) : `<form novalidate id="join" class="stack">${info.anonymous ? "<p>" + tr("anonymous") + "</p>" : field(tr("name"), "name", "", "text", 'required maxlength="80"')}${info.private ? field(tr("phrase"), "passcode", "", "password", "required") : ""}${info.team ? field(tr("team"), "team") : ""}${info.photography ? check(tr("consent"), "consent") : ""}<button class="primary">${tr("join")} →</button></form>`}</section>`;
+  main.innerHTML = `<section class="entry"><div class="stage-bar"><p class="stage-pin"><span>${tr("session")}</span> <b class="pin">${esc(pin)}</b></p>${chooseLanguage()}</div><h1 translate="no" dir="auto">${esc(info.title)}</h1>${saved ? `<div class="stack">${link(tr("continue"), "#/" + play, "button primary wide", "", "next")}${link(tr("results"), "#/results/" + pin + "/" + localStorage.getItem("chorus.results." + pin), "button wide", "lock")}</div>` : `<form novalidate id="join" class="stack">${info.anonymous ? "<p>" + tr("anonymous") + "</p>" : field(tr("name"), "name", "", "text", 'required maxlength="80" autocomplete="name" dir="auto"')}${info.private ? field(tr("phrase"), "passcode", "", "password", "required") : ""}${info.team ? field(tr("team"), "team", "", "text", 'dir="auto"') : ""}${info.photography ? check(tr("consent"), "consent") : ""}${submitButton(tr("join"), "primary wide", "", "next")}</form>`}</section>`;
   bindLanguage();
   submit("#join", async (b) => {
     const v = await api("rooms/" + pin + "/join", "POST", {
@@ -275,6 +381,50 @@ async function join(pin, q) {
     localStorage.setItem("chorus.results." + pin, v.resultToken);
     go(play);
   });
+}
+const letter = (i) => "ABCDEFGHIJKL".charAt(i) || i + 1;
+const many = ["Multiple choice", "Ordering", "Ranking"];
+/* The answer surface for one question, on a phone or on the projector. */
+function surface(q, s, { display, available, correct }) {
+  const off = available ? "" : "disabled";
+  if (q.type === "Slide") return "";
+  if (q.labels?.length)
+    return display
+      ? `<div class="pairs"><ul>${q.labels.map((l) => `<li dir="auto">${esc(l)}</li>`).join("")}</ul><ul>${q.targets.map((l) => `<li dir="auto">${esc(l)}</li>`).join("")}</ul></div>`
+      : `<fieldset class="matches" ${off}>${q.labels.map((label, i) => select(label, "pair" + i, [["", "—"], ...q.targets], s.response?.[i])).join("")}</fieldset>`;
+  if (q.type === "Image hotspot")
+    return display
+      ? ""
+      : `<fieldset class="fields" ${off}>${field("X (%)", "x", s.response?.[0] ?? 50, "number", 'min="0" max="100"')}${field("Y (%)", "y", s.response?.[1] ?? 50, "number", 'min="0" max="100"')}</fieldset>`;
+  if (q.options.length)
+    return `<div class="answers${s.solution !== undefined ? " settled" : ""}">${q.options.map((o, i) => `<button type="button" data-action="pick-${i}" class="answer tone${i % 4} ${esc(q.effect)}${correct.includes(o) ? " right" : ""}" ${display || !available ? "disabled" : ""}><span class="key">${mark(i)}<b>${letter(i)}</b></span><span class="label" dir="auto">${esc(o)}</span>${correct.includes(o) ? icon("check", "tick") : ""}</button>`).join("")}</div><p id="selection" class="meta"></p>`;
+  if (display) return "";
+  if (q.type === "Rating")
+    return `<fieldset class="scale" ${off}><legend>${tr("rating")}</legend><div class="answers">${["1", "2", "3", "4", "5"].map((n) => `<label class="point"><input type="radio" required name="value" value="${n}" ${s.response === n ? "checked" : ""}><span>${num(n)}</span></label>`).join("")}</div></fieldset>`;
+  return field(
+    tr("response"),
+    "value",
+    s.response || "",
+    q.type === "Numeric" ? "number" : "text",
+    (q.type === "Numeric" ? 'step="any" required ' : 'required dir="auto" ') +
+      off,
+  );
+}
+function spread(q, s, correct) {
+  const index = (v) => q.options.indexOf([v].flat()[0]);
+  const rows = [...s.distribution].sort((a, b) =>
+    Array.isArray(a.value) ? b.n - a.n : index(a.value) - index(b.value),
+  );
+  return `<section class="spread"><h2>${tr("stats")}</h2>${rows
+    .map((d, n) => {
+      const at = index(d.value),
+        i = at < 0 ? n : at,
+        share = Math.round((100 * d.n) / (s.answered || 1)),
+        text = [d.value].flat().join(", "),
+        hit = correct.includes(d.value);
+      return `<div class="bar bar-${i % 4}${hit ? " right" : ""}"><span class="bar-label">${at >= 0 && !Array.isArray(d.value) ? mark(i) : ""}<span dir="auto">${esc(text)}</span>${hit ? icon("check", "tick") : ""}</span><progress value="${d.n}" max="${s.answered || 1}" aria-label="${esc(text)}"></progress><span class="bar-value"><b>${num(d.n)}</b> <small>${num(share)}%</small></span></div>`;
+    })
+    .join("")}</section>`;
 }
 async function stage(pin, requested, display) {
   const session = display ? null : localStorage.getItem(storageKey(pin));
@@ -288,7 +438,9 @@ async function stage(pin, requested, display) {
     timer,
     answers = [],
     signature = "",
-    priorPhase = "";
+    priorPhase = "",
+    talk = null,
+    seated = -1;
   const draw = async () => {
     const s = await api(
       path + "state?q=" + (Number(requested) || 0) + "&lang=" + locale(),
@@ -312,8 +464,11 @@ async function stage(pin, requested, display) {
         answers = Array.isArray(s.response) ? [...s.response] : [];
         signature = String(s.position);
       }
+      const fresh = changedQ || priorPhase === "waiting";
       priorPhase = s.phase;
       last = snapshot;
+      talk = null;
+      seated = -1;
       const resultLink = session
         ? link(
             tr("results"),
@@ -321,6 +476,8 @@ async function stage(pin, requested, display) {
               pin +
               "/" +
               localStorage.getItem("chorus.results." + pin),
+            "button",
+            "lock",
           )
         : "";
       const available =
@@ -329,29 +486,67 @@ async function stage(pin, requested, display) {
         (!s.deadline || s.now < s.deadline) &&
         (s.response === undefined || s.changes) &&
         s.solution === undefined;
-      main.innerHTML = `<section class="stage panel stack">${chooseLanguage()}<div class="row"><span class="pill">${esc(s.title)}</span><span>${tr("pin")} <strong>${esc(pin)}</strong></span></div><div id="count" class="sub"></div>${
+      const correct =
+        s.solution && q?.options.length && q.type !== "Ordering"
+          ? q.type === "Multiple choice"
+            ? s.solution.split("|")
+            : [s.solution]
+          : [];
+      const ended = s.phase === "ended";
+      const body =
         s.phase === "waiting"
-          ? `<h1>${tr("wait")}</h1>${display ? qr(pin) : "<p>" + tr("joined") + "</p>"}`
-          : s.phase === "ended"
-            ? `<h1>${tr("ended")}</h1>${resultLink}`
-            : `<div class="row"><span>${tr("question")} ${num(s.position + 1)} ${tr("of")} ${num(s.count)}</span><strong id="timer"></strong></div><div class="rich" role="heading" aria-level="1">${q.rich || esc(q.prompt)}</div>${q.asset ? (q.asset.mime.startsWith("image/") ? `<img class="attachment" alt="Question illustration" src="/api/assets/${esc(q.asset.id)}">` : `<${q.asset.mime.startsWith("audio/") ? "audio" : "video"} class="attachment" controls src="/api/assets/${esc(q.asset.id)}"></${q.asset.mime.startsWith("audio/") ? "audio" : "video"}>`) : ""}<span class="sub">${esc(q.type)} · ${esc(s.phase)}</span><form novalidate class="stack" id="answer">${q.type === "Slide" ? "" : q.labels?.length ? q.labels.map((label, i) => select(label, "pair" + i, [["", "—"], ...q.targets], s.response?.[i])).join("") : q.type === "Image hotspot" ? `<div class="fields">${field("X (%)", "x", 50, "number", 'min="0" max="100"')}${field("Y (%)", "y", 50, "number", 'min="0" max="100"')}</div>` : q.options.length ? `<div class="answers">${q.options.map((o, i) => `<button type="button" data-action="pick-${i}" class="answer tone${i % 4} ${esc(q.effect)}" ${display || !available ? "disabled" : ""}><span>${"ABCD".charAt(i) || i + 1}</span>${esc(o)}</button>`).join("")}</div><p id="selection"></p>` : display ? "" : q.type === "Rating" ? select(tr("rating"), "value", ["1", "2", "3", "4", "5"]) : field(tr("response"), "value", s.response || "", q.type === "Numeric" ? "number" : "text", q.type === "Numeric" ? 'step="any" required' : "required")} ${!display && available ? '<button class="primary" id="send">' + tr("send") + "</button>" : ""}</form>
- ${s.response !== undefined ? `<p class="info">✓ ${tr("recorded")}: ${esc([s.response].flat().join(", "))}</p>` : ""}${s.solution !== undefined ? `<div class="info"><strong>${s.solution ? tr("answer") + ": " + esc(s.solution) : tr("feedback")}</strong><p>${esc(s.explanation)}</p><small>${esc(s.reference)}</small></div>` : ""}
- ${s.textStats ? `<section class="cloud">${s.textStats.map((v) => `<span class="cloudword size${Math.min(4, v.n)}">${esc(v.value)} <small>×${v.n}</small></span>`).join("")}</section>` : ""}${s.distribution ? `<h3>${tr("stats")}</h3>${s.distribution.map((d) => `<label>${esc([d.value].flat().join(", "))} · ${d.n}<progress value="${d.n}" max="${s.answered || 1}"></progress></label>`).join("")}` : ""}`
-      }
- <div class="actions">${display && s.projected?.length ? s.projected.map((f) => `<img class="photo" alt="${esc(f.moment || "Session photograph")}" src="/api/rooms/${pin}/projected/${esc(f.id)}">`).join("") : ""}${display ? btn(tr("fullscreen"), "fullscreen") : s.phase !== "ended" ? resultLink : ""}${!display && s.mode === "self" && s.position > 0 ? link(tr("previous"), "#/play/" + pin + "/" + (s.position - 1)) : ""}${!display && s.mode === "self" && s.position < s.count - 1 ? link(tr("next"), "#/play/" + pin + "/" + (s.position + 1)) : ""}${s.rank ? link(tr("leaderboard"), "#/standings/" + pin) : ""}${!display && s.photos ? link(tr("gallery"), "#/gallery/" + pin) : ""}</div></section><section class="stage panel stack"><h2>${tr("qa")}</h2><div id="discussion"></div>${display || s.phase === "ended" ? "" : `<form novalidate class="stack" id="discuss">${field(tr("ask"), "body", "", "text", 'required maxlength="500"')}<button>${tr("moderate")}</button></form>`}</section>`;
+          ? `<div class="lobby"><div class="lobby-copy"><h1>${tr("wait")}</h1>${display ? `<div class="lobby-join">${qrImage(pin)}<div><span>${tr("pin")}</span><strong class="pin">${esc(pin)}</strong><span dir="ltr" translate="no">${esc(location.host)}</span></div></div>` : `<p>${tr("joined")}</p>`}</div><div id="hall"></div></div>`
+          : ended
+            ? `<div class="lobby"><div class="lobby-copy"><h1>${tr("ended")}</h1>${resultLink}</div><div id="hall"></div></div>`
+            : `<div class="question ${fresh ? "enter" : ""}"><div class="question-meta"><p class="meta"><span>${tr("question")} ${num(s.position + 1)} ${tr("of")} ${num(s.count)}</span><span>${esc(q.type)}</span>${s.phase === "open" ? "" : chip(s.phase)}</p><strong id="timer" role="timer"></strong></div><div class="rich" role="heading" aria-level="1" dir="auto" translate="no">${q.rich || esc(q.prompt)}</div>${q.asset ? (q.asset.mime.startsWith("image/") ? `<img class="attachment" alt="Question illustration" src="/api/assets/${esc(q.asset.id)}">` : `<${q.asset.mime.startsWith("audio/") ? "audio" : "video"} class="attachment" controls src="/api/assets/${esc(q.asset.id)}"></${q.asset.mime.startsWith("audio/") ? "audio" : "video"}>`) : ""}<form novalidate class="stack" id="answer">${surface(q, s, { display, available, correct })}${!display && available ? `<div class="answer-bar"><button class="primary wide" id="send"><span>${tr("send")}</span></button></div>` : ""}</form>${s.response !== undefined ? `<p class="info recorded">✓ ${tr("recorded")}: ${esc([s.response].flat().join(", "))}</p>` : ""}${s.solution !== undefined ? `<div class="info solution"><strong>${s.solution ? tr("answer") + ": " + esc(s.solution) : tr("feedback")}</strong>${s.explanation ? `<p dir="auto" translate="no">${esc(s.explanation)}</p>` : ""}${s.reference ? `<small dir="auto" translate="no">${esc(s.reference)}</small>` : ""}</div>` : ""}${s.textStats ? `<section class="cloud" translate="no">${s.textStats.map((v, i) => `<span class="cloudword tone${i % 4} size${Math.min(4, v.n)}" dir="auto">${esc(v.value)} <small>×${num(v.n)}</small></span>`).join("")}</section>` : ""}${s.distribution ? spread(q, s, correct) : ""}</div>`;
+      const links =
+        (!display && s.mode === "self" && s.position > 0
+          ? link(
+              tr("previous"),
+              "#/play/" + pin + "/" + (s.position - 1),
+              "button",
+              "prev",
+            )
+          : "") +
+        (!display && s.mode === "self" && s.position < s.count - 1
+          ? link(
+              tr("next"),
+              "#/play/" + pin + "/" + (s.position + 1),
+              "button",
+              "",
+              "next",
+            )
+          : "") +
+        (!display && !ended ? resultLink : "") +
+        (s.rank
+          ? link(tr("leaderboard"), "#/standings/" + pin, "button", "trophy")
+          : "") +
+        (!display && s.photos
+          ? link(tr("gallery"), "#/gallery/" + pin, "button", "camera")
+          : "");
+      main.innerHTML = `<section class="stage ${display ? "projector" : ""} ${esc(s.phase)}"><div class="stage-bar"><strong class="stage-title" translate="no" dir="auto">${esc(s.title)}</strong><p class="stage-pin"><span>${tr("pin")}</span> <b class="pin">${esc(pin)}</b></p><p id="count" class="meta"></p>${chooseLanguage()}${display ? `<button type="button" class="icon-button" data-action="fullscreen" aria-label="${tr("fullscreen")}">${icon("fullscreen")}</button>` : ""}</div>${body}${display && s.projected?.length ? `<div class="projected">${s.projected.map((f) => `<img class="photo" alt="${esc(f.moment || "Session photograph")}" src="/api/rooms/${pin}/projected/${esc(f.id)}">`).join("")}</div>` : ""}${links ? `<div class="actions stage-links">${links}</div>` : ""}</section><section class="stage talk ${display ? "projector" : ""}"><h2>${tr("qa")}</h2><div id="discussion"></div>${display || ended ? "" : `<form novalidate id="discuss" class="askform">${field(tr("ask"), "body", "", "text", 'required maxlength="500" dir="auto"')}${submitButton(tr("moderate"), "")}</form>`}</section>`;
       bindLanguage();
       function selection() {
         all("[data-action^=pick]").forEach((b, i) => {
-          const selected = answers.includes(q.options[i]);
-          b.classList.toggle("selected", selected);
-          b.setAttribute("aria-pressed", String(selected));
+          const at = answers.indexOf(q.options[i]);
+          b.classList.toggle("selected", at >= 0);
+          b.setAttribute("aria-pressed", String(at >= 0));
+          b.querySelector(".key b").textContent =
+            at >= 0 && ["Ordering", "Ranking"].includes(q.type)
+              ? num(at + 1)
+              : letter(i);
         });
         if ($("#selection"))
-          $("#selection").textContent = answers.length
-            ? tr("selected") + ": " + answers.join(" → ")
-            : "";
+          $("#selection").textContent =
+            answers.length && many.includes(q.type)
+              ? tr("selected") +
+                ": " +
+                answers.join(q.type === "Multiple choice" ? ", " : " → ")
+              : "";
       }
       if (q?.options.length) {
+        if (!answers.length && s.response !== undefined)
+          answers = [s.response].flat();
         selection();
         bindEffects(q, s.style);
       }
@@ -366,7 +561,7 @@ async function stage(pin, requested, display) {
         }
         if (a.startsWith("pick-")) {
           const value = q.options[Number(a.slice(5))];
-          answers = ["Multiple choice", "Ranking", "Ordering"].includes(q.type)
+          answers = many.includes(q.type)
             ? answers.includes(value)
               ? answers.filter((v) => v !== value)
               : [...answers, value]
@@ -375,7 +570,9 @@ async function stage(pin, requested, display) {
         }
       });
       if (q?.type === "Image hotspot" && $(".attachment") && !display) {
-        $(".attachment").onclick = (e) => {
+        const image = $(".attachment");
+        image.classList.add("pinnable");
+        image.onclick = (e) => {
           const rect = e.target.getBoundingClientRect();
           $("[name=x]").value = Math.round(
             (100 * (e.clientX - rect.left)) / rect.width,
@@ -388,22 +585,22 @@ async function stage(pin, requested, display) {
       if (q?.type === "Drag and drop" && !display) {
         const form = $("#answer");
         const tray = document.createElement("div");
-        tray.className = "actions";
+        tray.className = "tray";
         for (const target of q.targets) {
-          const chip = document.createElement("span");
-          chip.className = "pill";
-          chip.textContent = target;
-          chip.draggable = true;
-          chip.ondragstart = (e) =>
+          const piece = document.createElement("span");
+          piece.className = "piece";
+          piece.textContent = target;
+          piece.draggable = true;
+          piece.ondragstart = (e) =>
             e.dataTransfer.setData("text/plain", target);
-          tray.append(chip);
+          tray.append(piece);
         }
         form.prepend(tray);
         form.ondragover = (e) => e.preventDefault();
         form.ondrop = (e) => {
           e.preventDefault();
-          const select = e.target.closest("label")?.querySelector("select");
-          if (select) select.value = e.dataTransfer.getData("text/plain");
+          const choice = e.target.closest(".field")?.querySelector("select");
+          if (choice) choice.value = e.dataTransfer.getData("text/plain");
         };
       }
       submit("#answer", async (b) => {
@@ -412,7 +609,7 @@ async function stage(pin, requested, display) {
           : q.type === "Image hotspot"
             ? [Number(b.x), Number(b.y)]
             : q.options.length
-              ? ["Multiple choice", "Ordering", "Ranking"].includes(q.type)
+              ? many.includes(q.type)
                 ? answers
                 : answers[0]
               : b.value;
@@ -430,21 +627,28 @@ async function stage(pin, requested, display) {
         notice(tr("awaiting"));
       });
     }
-    $("#count").textContent =
-      num(s.participants) +
-      " " +
-      tr("participants") +
-      " · " +
-      num(s.answered) +
-      " " +
-      tr("responses");
-    $("#discussion").innerHTML =
-      s.messages
-        .map(
-          (m) =>
-            `<div class="listitem">${esc(m.body)}${display ? `${num(m.votes)} ${tr("votes")}` : btn("↑ " + m.votes, "vote-" + m.id)}</div>`,
-        )
-        .join("") || "<p>" + tr("empty") + "</p>";
+    $("#count").innerHTML =
+      `<span>${num(s.participants)} ${tr("participants")}</span>` +
+      (s.phase === "waiting"
+        ? ""
+        : `<span>${num(s.answered)} ${tr("responses")}</span>`);
+    if ($("#hall") && seated !== s.participants) {
+      seated = s.participants;
+      $("#hall").innerHTML = roomFigure(s.participants);
+    }
+    const messages = s.messages
+      .map(
+        (m) =>
+          `<div class="listitem"><p translate="no" dir="auto">${esc(m.body)}</p>${display ? `<span class="meta">${num(m.votes)} ${tr("votes")}</span>` : `<button type="button" class="small" data-action="vote-${esc(m.id)}" aria-label="${num(m.votes)} ${tr("votes")}">${icon("up")}<span>${num(m.votes)}</span></button>`}</div>`,
+      )
+      .join("");
+    if (messages !== talk) {
+      talk = messages;
+      $("#discussion").innerHTML = messages
+        ? `<div class="list">${messages}</div>`
+        : `<p class="hint">${tr("empty")}</p>`;
+      $(".talk").hidden = !!display && !messages;
+    }
     clearInterval(timer);
     const offset = s.now - Date.now();
     const tick = () => {
@@ -455,7 +659,8 @@ async function stage(pin, requested, display) {
           0,
           Math.ceil((s.deadline - Date.now() - offset) / 1000),
         );
-        el.textContent = left + " s";
+        el.textContent = num(left);
+        el.classList.toggle("urgent", left <= 5);
         if (!left && $("#send")) $("#send").disabled = true;
       } else el.textContent = "";
     };
@@ -477,7 +682,15 @@ async function results(pin, raw) {
     undefined,
     raw,
   );
-  main.innerHTML = `<section class="panel stack">${chooseLanguage()}<span class="pill">${tr("privateReport")}</span>${title(r.name, r.title)}<p>${tr("bookmark")}</p><div class="row"><h2>${r.score === undefined ? tr("byQuestion") : num(r.score) + " " + tr("points")}</h2>${btn(tr("print"), "print")}</div>${r.percentage != null ? `<p>${r.correct} ${tr("correct")} · ${r.incorrect} ${tr("incorrect")} · ${num(r.percentage)}%</p>` : ""}${r.photos.length ? `<div class="grid">${r.photos.map((f) => `<figure><img id="photo-${esc(f.id)}" class="photo" alt="${esc(f.moment || "Session photograph")}"><figcaption>${esc(f.moment)}</figcaption></figure>`).join("")}</div>` : ""}${r.feedback ? `<p class="info">${esc(r.feedback)}</p>` : ""}${r.questions.map((q, i) => `<article class="panel stack"><span class="sub">${tr("question")} ${num(i + 1)}</span><h3>${esc(q.prompt)}</h3><p>${tr("response")} · ${esc(q.value === undefined ? tr("unanswered") : [q.value].flat().join(", "))}</p>${q.solution === undefined ? "<small>" + tr("pending") + "</small>" : `<strong>${q.correct === true ? "✓ " + tr("correct") : q.correct === false ? tr("incorrect") : tr("reviewed")} · ${num(q.points)} ${tr("points")}</strong><p>${esc(q.solution)}</p><p>${esc(q.explanation)}</p>`}${q.elapsed !== null ? `<small>${num(Math.round(q.elapsed / 1000))} ${tr("seconds")}</small>` : ""}</article>`).join("")}${r.leaders ? `<h2>${tr("leaderboard")}</h2>${r.leaders.map((v, i) => `<div class="listitem"><strong>${i + 1}. ${esc(v.name)}</strong>${v.score} points</div>`).join("")}` : ""}${r.certificate ? `<article class="panel"><span class="eyebrow">${esc(r.design?.title || tr("certificate"))}</span><h2>${esc(r.name)}</h2><p>${tr("completed")} ${esc(r.title)}</p><p>${esc(r.design?.issuer)}</p><strong>${esc(r.design?.signature)}</strong></article>` : ""}</section>`;
+  const verdict = (q) =>
+    q.solution === undefined
+      ? "pending"
+      : q.correct === true
+        ? "right"
+        : q.correct === false
+          ? "wrong"
+          : "reviewed";
+  main.innerHTML = `<section class="results"><div class="stage-bar"><p class="chip">${icon("lock")}<span>${tr("privateReport")}</span></p>${chooseLanguage()}${btn(tr("print"), "print", "small", "print")}</div><div class="score board"><div><h1 translate="no" dir="auto">${esc(r.name)}</h1><p translate="no" dir="auto">${esc(r.title)}</p></div><div class="score-value">${r.score === undefined ? "" : `<strong>${num(r.score)} ${tr("points")}</strong>`}${r.percentage != null ? `<p class="meta"><span>${num(r.correct)} ${tr("correct")}</span><span>${num(r.incorrect)} ${tr("incorrect")}</span><span>${num(r.percentage)}%</span></p>` : ""}</div></div><p class="hint">${tr("bookmark")}</p>${r.photos.length ? `<div class="photos">${r.photos.map((f) => `<figure><img id="photo-${esc(f.id)}" class="photo" alt="${esc(f.moment || "Session photograph")}"><figcaption translate="no">${esc(f.moment)}</figcaption></figure>`).join("")}</div>` : ""}${r.feedback ? `<p class="info" translate="no" dir="auto">${esc(r.feedback)}</p>` : ""}<h2 class="review-title">${tr("byQuestion")}</h2><ol class="review">${r.questions.map((q, i) => `<li class="${verdict(q)}"><p class="meta"><span>${tr("question")} ${num(i + 1)}</span>${q.elapsed !== null ? `<span>${num(Math.round(q.elapsed / 1000))} ${tr("seconds")}</span>` : ""}</p><h2 translate="no" dir="auto">${esc(q.prompt)}</h2><dl><div><dt>${tr("response")}</dt><dd translate="no" dir="auto">${esc(q.value === undefined ? tr("unanswered") : [q.value].flat().join(", "))}</dd></div>${q.solution ? `<div><dt>${tr("answer")}</dt><dd translate="no" dir="auto">${esc(q.solution)}</dd></div>` : ""}</dl>${q.solution === undefined ? `<p class="hint">${tr("pending")}</p>` : `<strong class="verdict">${q.correct === true ? "✓ " + tr("correct") : q.correct === false ? tr("incorrect") : tr("reviewed")} · ${num(q.points)} ${tr("points")}</strong>${q.explanation ? `<p translate="no" dir="auto">${esc(q.explanation)}</p>` : ""}`}</li>`).join("")}</ol>${r.leaders ? `<section class="block"><h2>${tr("leaderboard")}</h2><div class="list">${r.leaders.map((v, i) => `<div class="listitem"><strong><span class="place">${num(i + 1)}</span> <span translate="no" dir="auto">${esc(v.name)}</span></strong><span>${num(v.score)} ${tr("points")}</span></div>`).join("")}</div></section>` : ""}${r.certificate ? `<article class="certificate"><div class="seal" aria-hidden="true">${[0, 1, 2, 3].map((i) => mark(i)).join("")}</div><p>${esc(r.design?.title || tr("certificate"))}</p><h2 translate="no" dir="auto">${esc(r.name)}</h2><p>${tr("completed")} <span translate="no">${esc(r.title)}</span></p><div class="sign"><span translate="no">${esc(r.design?.issuer)}</span><strong translate="no">${esc(r.design?.signature)}</strong></div></article>` : ""}</section>`;
   bindLanguage();
   actions((a) => {
     if (a === "print") print();
@@ -499,11 +712,13 @@ async function results(pin, raw) {
 async function report(pin) {
   const path = "rooms/" + pin + "/report",
     r = await api(path);
-  const graded = r.table.filter((row) => row[4] !== "");
-  main.innerHTML =
-    tabs("reports") +
-    title(r.title, "Session report · " + pin) +
-    `<div class="actions">${link("Export CSV", "/api/" + path + "?format=csv")}${link("Export Excel", "/api/" + path + "?format=xlsx")}${btn("Print / Save PDF", "print")}</div><div class="panel"><h3>Answer accuracy</h3><p>${graded.length ? Math.round((100 * graded.filter((v) => v[4] === "true").length) / graded.length) + "% across " + graded.length + " graded responses" : "No graded responses yet."}</p></div><div class="panel scroll"><table><thead><tr>${r.headings.map((v) => `<th>${esc(v)}</th>`).join("")}</tr></thead><tbody>${r.table.map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  const graded = r.table.filter((row) => row[4] !== ""),
+    right = graded.filter((v) => v[4] === "true").length;
+  const cell = (v, i) =>
+    i === 4 && (v === "true" || v === "false")
+      ? `<td><span class="chip ${v === "true" ? "live" : "bad"}">${v === "true" ? "Correct" : "Incorrect"}</span></td>`
+      : `<td dir="auto" translate="no">${esc(v)}</td>`;
+  main.innerHTML = `<div class="page-head"><div>${title(r.title)}<p class="meta"><span>Session report</span><span><span>PIN</span> <b class="pin">${esc(pin)}</b></span></p></div><div class="actions">${link("Export CSV", "/api/" + path + "?format=csv", "button", "download")}${link("Export Excel", "/api/" + path + "?format=xlsx", "button", "download")}${btn("Print / Save PDF", "print", "", "print")}</div></div><section class="accuracy"><h2>Answer accuracy</h2>${graded.length ? `<p class="big">${num(Math.round((100 * right) / graded.length))}%</p><div><progress value="${right}" max="${graded.length}" aria-label="Answer accuracy"></progress><p>${`${right} of ${graded.length} graded responses are correct`}</p></div>` : "<p>No graded responses yet.</p>"}</section>${r.table.length ? `<div><div class="scroll" tabindex="0" role="region" aria-label="Session report"><table class="report-table"><thead><tr>${r.headings.map((v) => `<th scope="col">${esc(v)}</th>`).join("")}</tr></thead><tbody class="${r.table.length > 20 ? "capped" : ""}">${r.table.map((row) => `<tr>${row.map(cell).join("")}</tr>`).join("")}</tbody></table></div>${r.table.length > 20 ? more(r.table.length) : ""}</div>` : empty("Responses appear here once participants answer.")}`;
   actions(() => print());
 }
 async function gallery(pin, selectedPerson) {
@@ -515,16 +730,26 @@ async function gallery(pin, selectedPerson) {
     hostData = raw ? null : await api(path + "host"),
     s = raw ? await api(path + "state", "GET", undefined, raw) : null;
   const urls = [];
-  main.innerHTML = `<section class="panel stack">${title("Session photographs")}${hostData ? link("Download authorized photos (ZIP)", "/api/" + path + "photo-archive") : ""}${raw ? `<form novalidate id="consent" class="stack">${check("I consent to private photography in this session. Withdrawing removes my photos.", "consent", s.consent)}${check("Allow public display of my photographs", "publicPhoto", s.publicPhoto)}<button>Save consent</button></form>${btn("Show my identification QR", "identify")}<div id="identification"></div>` : ""}${
+  const file = (label, attrs, glyph) =>
+    `<label class="filefield">${icon(glyph)}<span>${label}</span><input type="file" ${attrs}></label>`;
+  const head = hostData
+    ? link(
+        "Download authorized photos (ZIP)",
+        "/api/" + path + "photo-archive",
+        "button",
+        "download",
+      ) + link("Open controls", "#/host/" + pin, "button", "prev")
+    : link("Session", "#/play/" + pin, "button", "prev");
+  main.innerHTML = `<div class="gallery">${pageHead("Session photographs", "", head)}<div class="gallery-grid"><div class="gallery-tools">${raw ? `<form novalidate id="consent" class="stack tool"><h2>Consent</h2>${check("I consent to private photography in this session. Withdrawing removes my photos.", "consent", s.consent)}${check("Allow public display of my photographs", "publicPhoto", s.publicPhoto)}<div class="actions">${submitButton("Save consent", "")}${btn("Show my identification QR", "identify", "", "qr")}</div><div id="identification"></div></form>` : ""}${
     hostData?.config.guardian
-      ? `<form novalidate id="guardian" class="stack"><h3>Guardian authorization</h3>${select(
+      ? `<form novalidate id="guardian" class="stack tool"><h2>Guardian authorization</h2>${select(
           "Participant",
           "person",
           hostData.people.map((p) => [p.id, p.name]),
           selectedPerson,
-        )}${field("Verified consent record reference (leave blank to withdraw)", "reference")}<button>Record authorization</button></form>`
+        )}${field("Verified consent record reference (leave blank to withdraw)", "reference")}${submitButton("Record authorization", "")}</form>`
       : ""
-  }<form novalidate id="upload" class="stack">${
+  }<form novalidate id="upload" class="stack tool"><h2>Add a photograph</h2>${
     hostData
       ? select(
           "Consenting participant",
@@ -539,7 +764,7 @@ async function gallery(pin, selectedPerson) {
           selectedPerson,
         )
       : ""
-  }${field("Moment or question", "moment")}<label>Take a photograph<input type="file" id="camera" accept="image/*" capture="environment"></label><label>Or select an existing photograph<input type="file" name="image" accept="image/jpeg,image/png,image/webp" required></label><button class="primary">Upload privately</button></form><div class="grid">${photos.map((f) => `<article class="card"><img class="photo" id="p${esc(f.id)}" alt="${esc(f.moment || "Session photograph")}"><h3>${esc(f.name)}</h3><p>${esc(f.moment)}</p>${hostData && !hostData.config.secret && f.public_photo ? btn(f.published ? "Remove from projector" : "Show on public projector", "publish:" + f.id) : ""}${btn("Delete photo", "delete-" + f.id, "danger")}</article>`).join("")}</div></section>`;
+  }${field("Moment or question", "moment", "", "text", 'dir="auto"')}${file("Take a photograph", 'id="camera" accept="image/*" capture="environment"', "camera")}${file("Or select an existing photograph", 'name="image" accept="image/jpeg,image/png,image/webp" required', "image")}${submitButton("Upload privately", "primary", "upload")}</form></div>${photos.length ? `<div class="photos">${photos.map((f) => `<figure><img class="photo" id="p${esc(f.id)}" alt="${esc(f.moment || "Session photograph")}"><figcaption><strong translate="no" dir="auto">${esc(f.name)}</strong><span translate="no" dir="auto">${esc(f.moment)}</span><div class="actions">${hostData && !hostData.config.secret && f.public_photo ? btn(f.published ? "Remove from projector" : "Show on public projector", "publish:" + f.id, "small", "slides") : ""}${btn("Delete photo", "delete-" + f.id, "small quiet danger", "trash")}</div></figcaption></figure>`).join("")}</div>` : empty("Photographs added to this session appear here.")}</div></div>`;
   for (const f of photos) {
     const response = await fetch(
       "/api/" + path + "photos/" + f.id + "?thumb=1",
@@ -552,7 +777,7 @@ async function gallery(pin, selectedPerson) {
       if (img) img.src = url;
     }
   }
-  closeLive = () => urls.forEach(URL.revokeObjectURL);
+  closeLive = () => urls.forEach((u) => URL.revokeObjectURL(u));
   const reload = async () => {
     roomCleanup();
     await gallery(pin);
@@ -562,6 +787,17 @@ async function gallery(pin, selectedPerson) {
     await reload();
   });
   submit("#consent", async (b) => {
+    if (
+      s.consent &&
+      b.consent !== "on" &&
+      photos.length &&
+      !(await confirmAction(
+        "Withdraw photography consent?",
+        "Your photographs in this session are removed.",
+        "Withdraw consent",
+      ))
+    )
+      return;
     await api(
       path + "consent",
       "POST",
@@ -571,7 +807,10 @@ async function gallery(pin, selectedPerson) {
     await reload();
   });
   $("#camera").onchange = (e) => {
-    if (e.target.files.length) $("[name=image]").files = e.target.files;
+    if (e.target.files.length) {
+      $("[name=image]").files = e.target.files;
+      $("[name=image]").dispatchEvent(new Event("input", { bubbles: true }));
+    }
   };
   submit("#upload", async (b, f) => {
     await api(path + "photos", "POST", new FormData(f), raw);
@@ -595,9 +834,17 @@ async function gallery(pin, selectedPerson) {
       const url = URL.createObjectURL(await response.blob());
       urls.push(url);
       $("#identification").innerHTML =
-        `<img class="qr" alt="Presenter identification QR" src="${url}">`;
+        `<img class="qr" width="220" height="220" alt="Presenter identification QR" src="${url}">`;
       return;
     }
+    if (
+      !(await confirmAction(
+        "Delete this photograph?",
+        "It is removed for everyone and cannot be recovered.",
+        "Delete photo",
+      ))
+    )
+      return;
     await api(path + "photos/" + a.slice(7), "DELETE", undefined, raw);
     await reload();
   });

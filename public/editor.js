@@ -6,21 +6,25 @@ import {
   formData,
   link,
   btn,
+  submitButton,
   field,
   area,
   select,
-  check,
   go,
   notice,
+  confirmAction,
   api,
   submit,
   actions,
   saveFile,
   title,
-  tabs,
-  storageKey,
+  pageHead,
+  empty,
+  capped,
   demo,
+  icon,
 } from "./shared.js";
+import { mark } from "./room.js";
 const types = [
   "Single choice",
   "Multiple choice",
@@ -63,6 +67,29 @@ const fresh = () => ({
   explanation: "",
   reference: "",
 });
+const pairTypes = ["Matching", "Drag and drop"];
+const keyed = {
+  "Single choice": "radio",
+  "True or false": "radio",
+  "Multiple choice": "checkbox",
+};
+/* One row per option. The correct answer is marked on the row itself. */
+function optionFields(q) {
+  const kind = keyed[q.type],
+    ordered = q.type === "Ordering",
+    fixed = q.type === "True or false",
+    options =
+      q.options.length >= 2 ? q.options : [...q.options, "", ""].slice(0, 2),
+    keys = q.type === "Multiple choice" ? (q.key || "").split("|") : [q.key];
+  return `<fieldset class="options"><legend>${ordered ? "Options in correct order" : "Answer options"}</legend>${kind ? `<p class="hint">${q.type === "Multiple choice" ? "Tick every correct option." : "Mark the correct option."}</p>` : ""}<div class="option-list">${options
+    .map(
+      (o, i) =>
+        `<div class="option-row"><span class="option-key tone${i % 4}">${ordered ? `<b>${i + 1}</b>` : mark(i)}</span><input data-option dir="auto" maxlength="400" aria-label="Option ${i + 1}" placeholder="Option ${i + 1}" value="${esc(o)}">${kind ? `<label class="mark-correct"><input type="${kind}" data-correct name="correct" aria-label="Option ${i + 1} is correct" ${o && keys.includes(o) ? "checked" : ""}>${icon("check")}</label>` : ""}${ordered ? `<button type="button" class="icon-button" data-action="option-up-${i}" aria-label="Move option ${i + 1} up" ${i ? "" : "disabled"}>${icon("up")}</button>` : ""}${!fixed && options.length > 2 ? `<button type="button" class="icon-button" data-action="option-remove-${i}" aria-label="Remove option ${i + 1}">${icon("close")}</button>` : ""}</div>`,
+    )
+    .join(
+      "",
+    )}</div>${!fixed && options.length < 12 ? btn("Add option", "option-add", "small", "plus") : ""}</fieldset>`;
+}
 function matchingFields(q) {
   const pairs = Array.from(
     { length: Math.max(2, q.options.length) },
@@ -71,17 +98,14 @@ function matchingFields(q) {
       return { label, target: target.join("|") };
     },
   );
-  return (
-    '<section class="stack"><h3>Matching pairs</h3>' +
-    pairs
-      .map(
-        (pair, index) =>
-          `<fieldset class="stack" data-pair><legend>Pair ${index + 1}</legend><div class="fields">${field("Label", "pairLabel" + index, pair.label, "text", 'data-label maxlength="180"')}${field("Matching target", "pairTarget" + index, pair.target, "text", 'data-target maxlength="180"')}</div>${pairs.length > 2 ? btn("Remove pair", "pair-remove-" + index) : ""}</fieldset>`,
-      )
-      .join("") +
-    (pairs.length < 12 ? btn("Add pair", "pair-add") : "") +
-    "</section>"
-  );
+  return `<section class="options stack"><h3>Matching pairs</h3>${pairs
+    .map(
+      (pair, index) =>
+        `<fieldset class="pair" data-pair><legend>Pair ${index + 1}</legend><div class="fields">${field("Label", "pairLabel" + index, pair.label, "text", 'data-label maxlength="180" dir="auto"')}${field("Matching target", "pairTarget" + index, pair.target, "text", 'data-target maxlength="180" dir="auto"')}</div>${pairs.length > 2 ? btn("Remove pair", "pair-remove-" + index, "small quiet danger", "trash") : ""}</fieldset>`,
+    )
+    .join(
+      "",
+    )}${pairs.length < 12 ? btn("Add pair", "pair-add", "small", "plus") : ""}</section>`;
 }
 async function editor(key, index, kind = "quiz") {
   const deck = kind === "presentation";
@@ -153,13 +177,20 @@ async function editor(key, index, kind = "quiz") {
       ar: { prompt: v.arPrompt, explanation: v.arExplanation },
       ckb: { prompt: v.ckbPrompt, explanation: v.ckbExplanation },
     };
-    if (v.options !== undefined)
-      q.options = v.options.split("\n").map((s) => s.trim());
+    const rows = [...f.querySelectorAll(".option-row")];
+    if (rows.length) {
+      q.options = rows.map((row) =>
+        row.querySelector("[data-option]").value.trim(),
+      );
+      if (rows[0].querySelector("[data-correct]"))
+        q.key = rows
+          .filter((row) => row.querySelector("[data-correct]").checked)
+          .map((row) => row.querySelector("[data-option]").value.trim())
+          .filter(Boolean)
+          .join("|");
+    }
     if (v.key !== undefined) q.key = v.key;
-    if (
-      ["Matching", "Drag and drop"].includes(q.type) &&
-      f.querySelector("[data-pair]")
-    )
+    if (pairTypes.includes(q.type) && f.querySelector("[data-pair]"))
       q.options = [...f.querySelectorAll("[data-pair]")]
         .map((row) => [
           row.querySelector("[data-label]").value.trim(),
@@ -174,6 +205,10 @@ async function editor(key, index, kind = "quiz") {
     clearTimeout(pending);
     const payload = structuredClone(doc),
       rev = update;
+    // Rows left blank in the editor are not answers.
+    for (const q of payload.questions)
+      if (optionsTypes.includes(q.type) && !pairTypes.includes(q.type))
+        q.options = q.options.filter(Boolean);
     const save = async () => {
       const result = await api(
         key && key !== "template" ? "quizzes/" + key : "quizzes",
@@ -195,6 +230,9 @@ async function editor(key, index, kind = "quiz") {
     clearTimeout(pending);
     const status = $("#saved");
     if (status) status.textContent = "Draft saved on this device";
+    const current = $(".outline [aria-current] .outline-text");
+    if (current)
+      current.textContent = doc.questions[idx].prompt || "Untitled question";
     if (isExisting)
       pending = setTimeout(async () => {
         try {
@@ -208,9 +246,23 @@ async function editor(key, index, kind = "quiz") {
   function draw() {
     idx = Math.max(0, Math.min(idx, doc.questions.length - 1));
     const q = doc.questions[idx];
-    main.innerHTML =
-      tabs(deck ? "presentations" : "library") +
-      `<div class="row">${title(deck ? "Presentation studio" : "Quiz studio")}<span class="pill" id="saved">${version ? "Saved quiz" : "Local draft"}</span></div><div class="actions">${btn(deck ? "Save presentation" : "Save quiz", "save", "primary")}${btn("Launch session →", "launch")}${btn("Undo", "undo")}${btn("Redo", "redo")}${btn("Preview", "preview")}</div><form novalidate id="edit"><div class="panel fields">${field(deck ? "Presentation title" : "Quiz title", "title", doc.title, "text", 'required maxlength="200"')}${field("Category", "category", doc.category)}</div><div class="split"><section class="panel stack"><div class="row"><h2>Question ${idx + 1}</h2>${select("Format", "type", types, q.type)}</div>${area("Question (Markdown and $math$ supported)", "prompt", q.prompt)}<label>Question media (shared with participants)<input type="file" id="asset" accept="image/*,video/mp4,video/webm,audio/*"></label>${q.asset ? "<p>Attached " + esc(q.asset.mime) + "</p>" + btn("Remove attachment", "detach") : ""}${["Matching", "Drag and drop"].includes(q.type) ? matchingFields(q) : optionsTypes.includes(q.type) ? area(q.type === "Ordering" ? "Options in correct order, one per line" : "Answer options, one per line", "options", q.options.join("\n")) : ""}${["Single choice", "Multiple choice", "True or false", "Text answer", "Fill in the blank", "Numeric", "Image hotspot"].includes(q.type) ? field(q.type === "Image hotspot" ? "Target X,Y,radius (0–100%)" : q.type === "Multiple choice" ? "Correct options, separated by |" : "Correct answer", "key", q.key) : ""}<div class="fields">${field("Time limit in seconds (0 for untimed)", "seconds", q.seconds, "number", 'min="0" max="3600"')}${field("Points", "points", q.points, "number", 'min="0" max="10000"')}</div>${area("Explanation", "explanation", q.explanation)}${field("Reference", "reference", q.reference)}<details><summary>Multilingual wording</summary><div class="stack">${area("السؤال بالعربية", "arPrompt", q.translations?.ar?.prompt)}${area("الشرح بالعربية", "arExplanation", q.translations?.ar?.explanation)}${area("پرسیار بە کوردی", "ckbPrompt", q.translations?.ckb?.prompt)}${area("ڕوونکردنەوە بە کوردی", "ckbExplanation", q.translations?.ckb?.explanation)}</div></details>${select("Answer effect for informal sessions", "effect", ["None", "Float", "Bounce", "Shake", "Run away", "Vertical", "Escape and return", "Random"], q.effect)}<details><summary>Effect settings</summary><p>Moving a particular answer can hint at the solution. Graded sessions disable these effects.</p><div class="fields">${field("Movements", "moves", q.moves || 1, "number", 'min="1" max="3"')}${field("Intensity", "intensity", q.intensity || 2, "number", 'min="1" max="5"')}${field("Duration (ms)", "duration", q.duration || 450, "number", 'min="150" max="1500"')}${field("Target option index (−1 for all)", "target", q.target ?? -1, "number", 'min="-1" max="11"')}</div></details>${select("Difficulty", "difficulty", ["Introductory", "Standard", "Advanced"], q.difficulty || "Standard")}${field("Tags", "tags", q.tags || "")}</section><aside class="panel stack"><h2>Questions</h2><div class="list">${doc.questions.map((v, n) => `<div draggable="true" data-index="${n}">${btn(n + 1 + ". " + (v.prompt || "Untitled question"), "q-" + n, idx === n ? "primary" : "")}</div>`).join("")}</div>${btn("＋ Add question", "add")}${btn("Duplicate question", "duplicate")}<div class="actions">${btn("↑ Move", "up")}${btn("↓ Move", "down")}</div>${doc.questions.length > 1 ? btn("Remove question", "remove", "danger") : ""}${btn("Insert from question bank", "pickbank")}<div id="bankpick"></div></aside></div></form><section class="panel"><details><summary>Import, export and manage quiz</summary><div class="stack"><p>Review imported questions in the editor before launching. CSV and Excel columns include prompt, type, options and key. Separate options with |. In Word and PDF, start each question with Q:, list options as A. and B., then add Answer: A. Imported text requires review.</p><label>Import JSON, CSV, Excel, Word or PDF<input type="file" id="import" accept=".json,.csv,.xlsx,.docx,.pdf"></label><div class="actions">${btn("Export quiz JSON", "export")}${isExisting ? btn("Duplicate quiz", "copy") + btn("Delete quiz", "delete", "danger") : ""}</div><div id="confirm"></div></div></details></section>${ai.enabled ? '<section class="panel"><form novalidate class="stack" id="ai"><h2>Generate a draft</h2>' + area("Learning objective or source text", "topic") + "<button>Generate for review</button></form></section>" : ""}<div id="preview"></div>`;
+    const named = [
+      "Single choice",
+      "Multiple choice",
+      "True or false",
+      "Text answer",
+      "Fill in the blank",
+      "Numeric",
+      "Image hotspot",
+    ];
+    main.innerHTML = `<div class="studio-bar"><div class="with-chip">${title(deck ? "Presentation studio" : "Quiz studio")}<span class="chip" id="saved">${version ? "Saved quiz" : "Local draft"}</span></div><div class="actions"><button type="button" class="icon-button" data-action="undo" aria-label="Undo">${icon("undo")}</button><button type="button" class="icon-button" data-action="redo" aria-label="Redo">${icon("redo")}</button>${btn("Preview", "preview", "", "eye")}${btn("Launch session", "launch", "", "play")}${btn(deck ? "Save presentation" : "Save quiz", "save", "primary", "save")}</div></div><form novalidate id="edit" class="studio"><aside class="outline" aria-label="Questions"><h2>Questions</h2><div class="outline-list">${doc.questions
+      .map(
+        (v, n) =>
+          `<div draggable="true" data-index="${n}"><button type="button" class="outline-item" data-action="q-${n}" ${idx === n ? 'aria-current="true"' : ""}><b>${n + 1}</b><span class="outline-text" dir="auto" translate="no">${esc(v.prompt || "Untitled question")}</span><small>${esc(v.type)}</small></button></div>`,
+      )
+      .join(
+        "",
+      )}</div><div class="outline-tools">${btn("Add question", "add", "wide", "plus")}<div class="actions">${btn("Move up", "up", "small", "up")}${btn("Move down", "down", "small", "down")}</div>${btn("Duplicate question", "duplicate", "small quiet", "copy")}${btn("Insert from question bank", "pickbank", "small quiet", "bank")}${doc.questions.length > 1 ? btn("Remove question", "remove", "small quiet danger", "trash") : ""}<div id="bankpick" class="stack"></div></div></aside><section class="canvas stack"><div class="fields">${field(deck ? "Presentation title" : "Quiz title", "title", doc.title, "text", 'required maxlength="200" dir="auto"')}${field("Category", "category", doc.category, "text", 'dir="auto"')}</div><div class="canvas-head"><h2>Question ${idx + 1}</h2>${select("Format", "type", types, q.type)}</div><div class="prompt-field">${area("Question (Markdown and $math$ supported)", "prompt", q.prompt, 'dir="auto"')}</div>${pairTypes.includes(q.type) ? matchingFields(q) : optionsTypes.includes(q.type) ? optionFields(q) : ""}${named.includes(q.type) && !keyed[q.type] ? field(q.type === "Image hotspot" ? "Target X,Y,radius (0–100%)" : "Correct answer", "key", q.key, "text", 'dir="auto"') : ""}<label class="filefield">${icon("image")}<span>Question media (shared with participants)</span><input type="file" id="asset" accept="image/*,video/mp4,video/webm,audio/*"></label>${q.asset ? `<div class="row attached"><p><span>Attached</span> <span dir="ltr" translate="no">${esc(q.asset.mime)}</span></p>${btn("Remove attachment", "detach", "small quiet danger", "trash")}</div>` : ""}${area("Explanation", "explanation", q.explanation, 'dir="auto"')}${field("Reference", "reference", q.reference, "text", 'dir="auto"')}<details><summary>${icon("chevron")}<span>Multilingual wording</span></summary><div class="stack">${area("السؤال بالعربية", "arPrompt", q.translations?.ar?.prompt, 'dir="rtl" lang="ar"')}${area("الشرح بالعربية", "arExplanation", q.translations?.ar?.explanation, 'dir="rtl" lang="ar"')}${area("پرسیار بە کوردی", "ckbPrompt", q.translations?.ckb?.prompt, 'dir="rtl" lang="ckb"')}${area("ڕوونکردنەوە بە کوردی", "ckbExplanation", q.translations?.ckb?.explanation, 'dir="rtl" lang="ckb"')}</div></details></section><aside class="inspector stack" aria-label="Question settings"><h2>Question settings</h2>${field("Time limit in seconds (0 for untimed)", "seconds", q.seconds, "number", 'min="0" max="3600"')}${field("Points", "points", q.points, "number", 'min="0" max="10000"')}${select("Difficulty", "difficulty", ["Introductory", "Standard", "Advanced"], q.difficulty || "Standard")}${field("Tags", "tags", q.tags || "", "text", 'dir="auto"')}${select("Answer effect for informal sessions", "effect", ["None", "Float", "Bounce", "Shake", "Run away", "Vertical", "Escape and return", "Random"], q.effect)}<details><summary>${icon("chevron")}<span>Effect settings</span></summary><div class="stack"><p class="hint">Moving a particular answer can hint at the solution. Graded sessions disable these effects.</p>${field("Movements", "moves", q.moves || 1, "number", 'min="1" max="3"')}${field("Intensity", "intensity", q.intensity || 2, "number", 'min="1" max="5"')}${field("Duration (ms)", "duration", q.duration || 450, "number", 'min="150" max="1500"')}${field("Target option index (−1 for all)", "target", q.target ?? -1, "number", 'min="-1" max="11"')}</div></details></aside></form><section class="manage"><details><summary>${icon("chevron")}<span>Import, export and manage quiz</span></summary><div class="stack"><p>Review imported questions in the editor before launching. CSV and Excel columns include prompt, type, options and key. Separate options with |. In Word and PDF, start each question with Q:, list options as A. and B., then add Answer: A. Imported text requires review.</p><label class="filefield">${icon("upload")}<span>Import JSON, CSV, Excel, Word or PDF</span><input type="file" id="import" accept=".json,.csv,.xlsx,.docx,.pdf"></label><div class="actions">${btn("Export quiz JSON", "export", "", "download")}${isExisting ? btn("Duplicate quiz", "copy", "", "copy") + btn("Delete quiz", "delete", "quiet danger", "trash") : ""}</div></div></details></section>${ai.enabled ? `<section class="manage"><form novalidate class="stack" id="ai"><h2>Generate a draft</h2>${area("Learning objective or source text", "topic", "", 'dir="auto"')}${submitButton("Generate for review", "")}</form></section>` : ""}`;
     const f = $("#edit");
     f.onsubmit = (e) => e.preventDefault();
     f.onfocusin = (e) => {
@@ -224,7 +276,32 @@ async function editor(key, index, kind = "quiz") {
           q.key = "True";
         }
         draw();
+        $("[name=type]").focus();
       }
+      changed();
+    };
+    // Enter adds a row; pasting a list fills one row per line.
+    f.onkeydown = (e) => {
+      if (e.key !== "Enter" || !e.target.matches("[data-option]")) return;
+      e.preventDefault();
+      if (!e.isComposing) $('[data-action="option-add"]')?.click();
+    };
+    f.onpaste = (e) => {
+      if (!e.target.matches("[data-option]") || q.type === "True or false")
+        return;
+      const lines = e.clipboardData
+        .getData("text/plain")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (lines.length < 2) return;
+      e.preventDefault();
+      capture();
+      checkpoint();
+      const at = all("[data-option]").indexOf(e.target);
+      q.options.splice(at, lines.length, ...lines);
+      q.options = q.options.slice(0, 12);
+      draw();
       changed();
     };
     for (const el of all("[data-index]")) {
@@ -267,7 +344,7 @@ async function editor(key, index, kind = "quiz") {
         draw();
         changed();
       } catch (err) {
-        notice(err.message);
+        notice(err.message, "error");
       }
     };
     $("#import").onchange = async (e) => {
@@ -308,7 +385,7 @@ async function editor(key, index, kind = "quiz") {
         changed();
         notice("Imported into draft for review.");
       } catch (err) {
-        notice(err.message);
+        notice(err.message, "error");
       }
     };
     actions(async (a) => {
@@ -326,7 +403,7 @@ async function editor(key, index, kind = "quiz") {
               "source",
               qs.map((v) => [v.id, v.title]),
             ) + btn("Show questions", "picksource")
-          : "<p>Your question bank is empty.</p>";
+          : '<p class="hint">Your question bank is empty.</p>';
         return;
       }
       if (a === "picksource") {
@@ -366,6 +443,36 @@ async function editor(key, index, kind = "quiz") {
         changed();
         return;
       }
+      if (a === "option-add") {
+        checkpoint();
+        while (q.options.length < 2) q.options.push("");
+        q.options.push("");
+        draw();
+        all("[data-option]").at(-1).focus();
+        changed();
+        return;
+      }
+      if (a.startsWith("option-remove-")) {
+        checkpoint();
+        const [gone] = q.options.splice(Number(a.slice(14)), 1);
+        if (gone && keyed[q.type])
+          q.key = (q.key || "")
+            .split("|")
+            .filter((k) => k !== gone)
+            .join("|");
+        draw();
+        changed();
+        return;
+      }
+      if (a.startsWith("option-up-")) {
+        checkpoint();
+        const at = Number(a.slice(10));
+        q.options.splice(at - 1, 0, q.options.splice(at, 1)[0]);
+        draw();
+        all("[data-option]")[at - 1].focus();
+        changed();
+        return;
+      }
       if (a === "detach") {
         checkpoint();
         q.asset = null;
@@ -392,12 +499,14 @@ async function editor(key, index, kind = "quiz") {
         return;
       }
       if (a === "delete") {
-        $("#confirm").innerHTML =
-          "<p>Delete this quiz from the library? Existing sessions retain their questions.</p>" +
-          btn("Confirm deletion", "confirm-delete", "danger");
-        return;
-      }
-      if (a === "confirm-delete") {
+        if (
+          !(await confirmAction(
+            "Delete this quiz?",
+            "It leaves the library. Existing sessions retain their questions.",
+            "Delete quiz",
+          ))
+        )
+          return;
         clearTimeout(pending);
         await api("quizzes/" + key, "DELETE");
         localStorage.removeItem(local);
@@ -405,15 +514,25 @@ async function editor(key, index, kind = "quiz") {
         return;
       }
       if (a === "preview") {
-        $("#preview").innerHTML =
-          `<section class="stage panel"><span class="pill">Participant preview</span><h1>${esc(q.prompt)}</h1><div class="answers">${q.options
-            .filter(Boolean)
-            .map(
-              (s, n) =>
-                `<div class="button answer tone${n % 4}">${esc(s)}</div>`,
-            )
-            .join("")}</div></section>`;
-        $("#preview").scrollIntoView();
+        const dialog = document.createElement("dialog");
+        dialog.className = "dialog preview";
+        dialog.setAttribute("aria-label", "Participant preview");
+        dialog.innerHTML = `<form method="dialog" novalidate><div class="row"><p class="chip">Participant preview</p><button class="icon-button" aria-label="Close preview">${icon("close")}</button></div><h2 class="prompt" dir="auto" translate="no">${esc(q.prompt)}</h2><div class="answers">${q.options
+          .filter(Boolean)
+          .map(
+            (o, n) =>
+              `<div class="answer tone${n % 4}"><span class="key">${mark(n)}</span><span class="label" dir="auto" translate="no">${esc(pairTypes.includes(q.type) ? o.replace("|", " – ") : o)}</span></div>`,
+          )
+          .join("")}</div></form>`;
+        dialog.onclose = () => {
+          dialog.remove();
+          $('[data-action="preview"]')?.focus();
+        };
+        dialog.onclick = (e) => {
+          if (e.target === dialog) dialog.close();
+        };
+        document.body.append(dialog);
+        dialog.showModal();
         return;
       }
       if (a === "undo" || a === "redo") {
@@ -450,26 +569,25 @@ async function editor(key, index, kind = "quiz") {
 async function bank() {
   const list = await api("quizzes"),
     docs = await Promise.all(list.map((q) => api("quizzes/" + q.id)));
-  main.innerHTML =
-    tabs("bank") +
-    title("Question bank") +
-    `<div class="panel stack">${field("Search questions", "search", "", "search")}<div class="list" id="items"></div></div>`;
+  main.innerHTML = `${pageHead("Question bank")}<div class="toolbar">${field("Search questions", "search", "", "search")}</div><div id="items" aria-live="polite"></div>`;
   const draw = () => {
-    $("#items").innerHTML =
-      docs
-        .flatMap((d) =>
-          d.document
-            .filter((q) =>
-              q.prompt
-                .toLowerCase()
-                .includes($("[name=search]").value.toLowerCase()),
-            )
-            .map(
-              (q) =>
-                `<div class="listitem"><div><strong>${esc(q.prompt)}</strong><p>${esc(d.title)} · ${esc(q.type)}</p></div>${link("Open source quiz", "#/editor/" + d.id)}</div>`,
-            ),
-        )
-        .join("") || "<p>No matching questions.</p>";
+    const query = $("[name=search]").value.toLowerCase();
+    const rows = docs.flatMap((d) =>
+      d.document
+        .filter((q) => q.prompt.toLowerCase().includes(query))
+        .map(
+          (q) =>
+            `<div class="listitem"><div><strong translate="no" dir="auto">${esc(q.prompt)}</strong><p class="meta"><span>${esc(q.type)}</span><span translate="no" dir="auto">${esc(d.title)}</span></p></div>${link("Open source quiz", (d.kind === "presentation" ? "#/presentation/" : "#/editor/") + d.id, "button small")}</div>`,
+        ),
+    );
+    $("#items").innerHTML = rows.length
+      ? capped(rows)
+      : docs.length
+        ? empty("No matching questions.")
+        : empty(
+            "Questions you write in quizzes collect here.",
+            link("Create quiz", "#/editor", "button primary", "plus"),
+          );
   };
   $("[name=search]").oninput = draw;
   draw();

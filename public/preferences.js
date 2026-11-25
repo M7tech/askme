@@ -1,15 +1,20 @@
 import { extra } from "./translations-extra.js";
 import { copy } from "./translations.js";
 import { locale } from "./locale.js";
+import { icon } from "./icons.js";
+import { redesign, phrases } from "./translations-redesign.js";
 
 const originals = new WeakMap();
-const dictionary = new Map([...copy, ...extra].map((row) => [row[0], row]));
+const dictionary = new Map(
+  [...copy, ...extra, ...redesign].map((row) => [row[0], row]),
+);
 function translate(value) {
   const index = ["en", "ar", "ckb"].indexOf(locale());
   const trimmed = value.trim();
   const row = dictionary.get(trimmed);
   if (row) return value.replace(trimmed, row[index]);
   const patterns = [
+    ...phrases,
     [/^Pair (\d+)$/, ["Pair $1", "الزوج $1", "جووتی $1"]],
     [/^Question (\d+)$/, ["Question $1", "السؤال $1", "پرسیاری $1"]],
     [/^(\d+) questions$/, ["$1 questions", "$1 أسئلة", "$1 پرسیار"]],
@@ -46,7 +51,7 @@ function applyLanguage() {
   for (const node of nodes) {
     if (
       node.parentElement.closest(
-        'script,style,textarea,[translate="no"],.brand,#preferences',
+        'script,style,textarea,[translate="no"],.brand,#preferences-slot',
       )
     )
       continue;
@@ -68,7 +73,7 @@ function applyLanguage() {
     }
   }
   document.querySelector("#global-language").value = locale();
-  for (const el of document.querySelectorAll("#font-increase,#font-decrease"))
+  for (const el of document.querySelectorAll("#preferences-slot [data-label]"))
     el.setAttribute("aria-label", translate(el.dataset.label));
   document
     .querySelector("#font-controls")
@@ -90,12 +95,30 @@ function applySize() {
   document.querySelector("#font-increase").disabled = fontSize >= 150;
   localStorage.setItem("chorus.fontSize", String(fontSize));
 }
-export function initializePreferences() {
-  const panel = document.createElement("div");
-  panel.id = "preferences";
-  panel.innerHTML =
-    '<label class="language">Language · اللغة · زمان<select id="global-language"><option value="en">English</option><option value="ar">العربية</option><option value="ckb">کوردیی سۆرانی</option></select></label><div id="font-controls" role="group"><button type="button" id="font-decrease" data-label="Decrease font size">−</button><output id="font-level" aria-live="polite"></output><button type="button" id="font-increase" data-label="Increase font size">+</button></div>';
-  document.querySelector("header").append(panel);
+function initializePreferences() {
+  const slot = document.querySelector("#preferences-slot");
+  slot.innerHTML = `<button type="button" id="preferences-toggle" class="icon-button" data-label="Display preferences" aria-expanded="false" aria-controls="preferences">${icon("sliders")}</button><div id="preferences"><label class="language">${icon("globe")}<span class="sr">Language · اللغة · زمان</span><select id="global-language"><option value="en">English</option><option value="ar">العربية</option><option value="ckb">کوردیی سۆرانی</option></select></label><div id="font-controls" role="group"><button type="button" id="font-decrease" data-label="Decrease font size">${icon("minus")}</button><output id="font-level" aria-live="polite"></output><button type="button" id="font-increase" data-label="Increase font size">${icon("plus")}</button></div><label class="theme"><input id="theme" type="checkbox" role="switch" data-label="Dark theme"><span aria-hidden="true">${icon("sun")}${icon("moon")}</span></label></div>`;
+  const toggle = document.querySelector("#preferences-toggle"),
+    open = (state) => {
+      slot.classList.toggle("open", state);
+      toggle.setAttribute("aria-expanded", String(state));
+    };
+  toggle.onclick = () => open(!slot.classList.contains("open"));
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#preferences-slot")) open(false);
+  });
+  slot.onkeydown = (e) => {
+    if (e.key === "Escape" && slot.classList.contains("open")) {
+      open(false);
+      toggle.focus();
+    }
+  };
+  const theme = document.querySelector("#theme");
+  theme.checked = document.documentElement.classList.contains("dark");
+  theme.onchange = () => {
+    document.documentElement.classList.toggle("dark", theme.checked);
+    localStorage.theme = theme.checked ? "dark" : "light";
+  };
   document.querySelector("#global-language").onchange = (event) => {
     localStorage.setItem("chorus.locale", event.target.value);
     location.reload();
@@ -125,3 +148,4 @@ export function initializePreferences() {
     characterData: true,
   });
 }
+export { initializePreferences, translate as t };

@@ -37,7 +37,7 @@ for (const type of ["Matching", "Drag and drop"])
     await page.reload();
     await expect(page.locator("[name=pairLabel1]")).toHaveValue("Paris");
     await page
-      .getByRole("button", { name: "Launch session →", exact: true })
+      .getByRole("button", { name: "Launch session", exact: true })
       .click();
     await page
       .getByRole("button", { name: "Create session", exact: true })

@@ -1,15 +1,5 @@
+import { icon } from "./icons.js";
 const main = document.querySelector("main");
-document.addEventListener(
-  "submit",
-  (event) => {
-    const form = event.target;
-    if (form instanceof HTMLFormElement && !form.reportValidity()) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-  },
-  true,
-);
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -21,32 +11,103 @@ const esc = (v) =>
 const $ = (s) => document.querySelector(s),
   all = (s) => [...document.querySelectorAll(s)];
 const formData = (f) => Object.fromEntries(new FormData(f));
-const link = (title, url, cls = "button") =>
-  `<a class="${cls}" href="${esc(url)}">${esc(title)}</a>`;
-const btn = (text, action, cls = "") =>
-  `<button type="button" class="${cls}" data-action="${esc(action)}">${esc(text)}</button>`;
-const field = (label, name, value = "", type = "text", attrs = "") =>
-  `<label>${esc(label)}<input type="${type}" name="${esc(name)}" value="${esc(value)}" ${attrs}></label>`;
-const area = (label, name, value = "") =>
-  `<label>${esc(label)}<textarea name="${esc(name)}">${esc(value)}</textarea></label>`;
-const select = (label, name, items, value) =>
-  `<label>${esc(label)}<select name="${name}">${items
+let sequence = 0;
+const uid = (prefix = "f") => prefix + ++sequence;
+
+/* Controls. `before` and `after` name icons from icons.js. */
+const link = (title, url, cls = "button", before = "", after = "") =>
+  `<a class="${cls}" href="${esc(url)}">${icon(before)}<span>${esc(title)}</span>${icon(after)}</a>`;
+const btn = (text, action, cls = "", before = "", after = "") =>
+  `<button type="button" class="${cls}" data-action="${esc(action)}">${icon(before)}<span>${esc(text)}</span>${icon(after)}</button>`;
+const submitButton = (text, cls = "primary", before = "", after = "") =>
+  `<button class="${cls}">${icon(before)}<span>${esc(text)}</span>${icon(after)}</button>`;
+function field(label, name, value = "", type = "text", attrs = "") {
+  const id = uid();
+  const input = `<input id="${id}" type="${type}" name="${esc(name)}" value="${esc(value)}" ${type === "search" ? 'placeholder=" "' : ""} ${attrs}>`;
+  const control =
+    type === "password"
+      ? `<div class="control secret">${input}<button type="button" class="inset" data-reveal aria-controls="${id}" aria-pressed="false">Show</button></div>`
+      : type === "search"
+        ? `<div class="control search">${icon("search")}${input}<button type="button" class="inset clear" data-clear aria-label="Clear search">${icon("close")}</button></div>`
+        : input;
+  return `<div class="field"><label for="${id}">${esc(label)}</label>${control}</div>`;
+}
+function area(label, name, value = "", attrs = "") {
+  const id = uid();
+  return `<div class="field"><label for="${id}">${esc(label)}</label><textarea id="${id}" name="${esc(name)}" ${attrs}>${esc(value)}</textarea></div>`;
+}
+function select(label, name, items, value) {
+  const id = uid();
+  return `<div class="field"><label for="${id}">${esc(label)}</label><div class="control choose"><select id="${id}" name="${name}">${items
     .map((it) => {
       const [k, v] = Array.isArray(it) ? it : [it, it];
       return `<option value="${esc(k)}" ${k === value ? "selected" : ""}>${esc(v)}</option>`;
     })
-    .join("")}</select></label>`;
+    .join("")}</select>${icon("chevron")}</div></div>`;
+}
 const check = (label, name, checked = false) =>
-  `<label class="check"><input type="checkbox" name="${name}" ${checked ? "checked" : ""}>${esc(label)}</label>`;
+  `<label class="check"><input type="checkbox" name="${name}" ${checked ? "checked" : ""}><span>${esc(label)}</span></label>`;
+
+/* Page furniture */
+function title(name, desc = "") {
+  return `<h1>${esc(name)}</h1>${desc ? `<p translate="no">${esc(desc)}</p>` : ""}`;
+}
+const pageHead = (name, desc = "", tools = "") =>
+  `<div class="page-head"><div>${title(name, desc)}</div>${tools ? `<div class="actions">${tools}</div>` : ""}</div>`;
+const empty = (text, action = "") =>
+  `<div class="empty"><p>${esc(text)}</p>${action}</div>`;
+const tones = {
+  open: "live",
+  waiting: "calm",
+  paused: "warn",
+  closed: "warn",
+  ended: "done",
+};
+const chip = (phase) =>
+  `<span class="chip ${tones[phase] || ""}">${esc(phase)}</span>`;
+/** Long collections show 20 rows and offer the rest; print shows everything. */
+const capped = (rows) =>
+  rows.length > 20
+    ? `<div class="list capped">${rows.join("")}</div>${more(rows.length)}`
+    : `<div class="list">${rows.join("")}</div>`;
+const more = (n) =>
+  `<button type="button" class="quiet" data-more>Show all ${n}</button>`;
+
 const go = (path) => {
   location.hash = "/" + path;
 };
 let timer;
-function notice(text) {
-  $("#notice").textContent = text;
+function notice(text, tone = "info") {
+  const el = $("#notice");
   clearTimeout(timer);
-  timer = setTimeout(() => ($("#notice").textContent = ""), 6500);
+  el.className = tone;
+  el.innerHTML = `${icon(tone === "error" ? "alert" : "done")}<span>${esc(text)}</span>`;
+  timer = setTimeout(() => el.replaceChildren(), 6500);
 }
+
+/** App-owned confirmation. Resolves true only for the named action. */
+function confirmAction(heading, consequence, verb) {
+  return new Promise((resolve) => {
+    const opener = document.activeElement,
+      id = uid("d"),
+      dialog = document.createElement("dialog");
+    dialog.className = "dialog";
+    dialog.setAttribute("aria-labelledby", id);
+    dialog.innerHTML = `<form method="dialog" novalidate><h2 id="${id}">${esc(heading)}</h2><p>${esc(consequence)}</p><div class="actions"><button value="" autofocus><span>Cancel</span></button><button value="yes" class="danger solid"><span>${esc(verb)}</span></button></div></form>`;
+    dialog.onclose = () => {
+      const agreed = dialog.returnValue === "yes";
+      dialog.remove();
+      if (opener?.isConnected) opener.focus();
+      resolve(agreed);
+    };
+    dialog.onclick = (e) => {
+      if (e.target === dialog) dialog.close("");
+    };
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+}
+
 async function api(path, method = "GET", data, participant) {
   const headers = {};
   if (participant)
@@ -64,18 +125,26 @@ async function api(path, method = "GET", data, participant) {
   if (!response.ok) throw Error(json.error || "Request failed.");
   return json;
 }
-function submit(selector, fn) {
-  $(selector)?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const b = e.submitter;
-    if (b) b.disabled = true;
-    try {
-      await fn(formData(e.target), e.target);
-    } catch (error) {
-      notice(error.message);
-    } finally {
-      if (b) b.disabled = false;
+async function busy(button, fn) {
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  }
+  try {
+    await fn();
+  } catch (error) {
+    notice(error.message, "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
     }
+  }
+}
+function submit(selector, fn) {
+  $(selector)?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    busy(e.submitter, () => fn(formData(e.target), e.target));
   });
 }
 function actions(fn) {
@@ -85,7 +154,7 @@ function actions(fn) {
     try {
       await fn(b.dataset.action, b);
     } catch (error) {
-      notice(error.message);
+      notice(error.message, "error");
     }
   };
 }
@@ -97,24 +166,97 @@ function saveFile(name, data, type = "application/json") {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function title(name, desc = "") {
-  return `<h1>${esc(name)}</h1>${desc ? `<p>${esc(desc)}</p>` : ""}`;
+
+/* Validation lives in the page: text beside the field, translated, linked. */
+function problem(el) {
+  const v = el.validity;
+  if (v.valueMissing)
+    return el.type === "radio"
+      ? "Choose an answer."
+      : el.type === "file"
+        ? "Choose a file."
+        : el.tagName === "SELECT"
+          ? "Choose an option."
+          : "Fill in this field.";
+  if (v.typeMismatch) return "Enter a valid email address.";
+  if (v.tooShort) return `Use at least ${el.minLength} characters.`;
+  if (v.patternMismatch) return "Enter the six-digit PIN.";
+  if (v.rangeUnderflow || v.rangeOverflow)
+    return el.max
+      ? `Enter a number from ${el.min} to ${el.max}.`
+      : `Enter ${el.min} or more.`;
+  return "Enter a valid number.";
 }
-function tabs(active) {
-  return `<div class="tabs">${[
-    ["Workspace", "dashboard"],
-    ["Quiz library", "library"],
-    ["Presentations", "presentations"],
-    ["Question bank", "bank"],
-    ["Live sessions", "sessions"],
-    ["Reports", "reports"],
-    ["Settings", "settings"],
-  ]
-    .map(([label, url]) =>
-      link(label, "#/" + url, url === active ? "active" : ""),
-    )
-    .join("")}</div>`;
+function clearProblem(el) {
+  const note = el.form?.querySelector(
+    `[data-error-for="${CSS.escape(el.name)}"]`,
+  );
+  if (!note) return;
+  note.remove();
+  for (const peer of el.form.elements)
+    if (peer.name === el.name) {
+      peer.removeAttribute("aria-invalid");
+      peer.removeAttribute("aria-describedby");
+    }
 }
+document.addEventListener(
+  "submit",
+  (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || form.method === "dialog") return;
+    for (const el of form.elements) if (el.name) clearProblem(el);
+    if (form.checkValidity()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const seen = new Set();
+    let first;
+    for (const el of form.elements) {
+      if (!el.willValidate || el.validity.valid || seen.has(el.name)) continue;
+      seen.add(el.name);
+      first ||= el;
+      const note = document.createElement("p"),
+        id = uid("e");
+      note.className = "field-error";
+      note.id = id;
+      note.dataset.errorFor = el.name;
+      note.innerHTML = `${icon("alert")}<span>${esc(problem(el))}</span>`;
+      const host = el.closest(".field, .answers, .pinform, .filefield") || el;
+      if (host.matches(".answers")) host.after(note);
+      else host === el ? el.after(note) : host.append(note);
+      el.setAttribute("aria-invalid", "true");
+      el.setAttribute("aria-describedby", id);
+    }
+    const hidden = first?.closest("details:not([open])");
+    if (hidden) hidden.open = true;
+    first?.focus();
+  },
+  true,
+);
+document.addEventListener("input", (e) => {
+  if (e.target.name) clearProblem(e.target);
+});
+document.addEventListener("click", (e) => {
+  const reveal = e.target.closest("[data-reveal]");
+  if (reveal) {
+    const input = document.getElementById(reveal.getAttribute("aria-controls")),
+      shown = input.type === "text";
+    input.type = shown ? "password" : "text";
+    reveal.setAttribute("aria-pressed", String(!shown));
+    reveal.textContent = shown ? "Show" : "Hide";
+  }
+  const clear = e.target.closest("[data-clear]");
+  if (clear) {
+    const input = clear.parentNode.querySelector("input");
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+  }
+  const expand = e.target.closest("[data-more]");
+  if (expand) {
+    expand.parentNode.querySelector(".capped")?.classList.remove("capped");
+    expand.remove();
+  }
+});
 const storageKey = (pin) => "chorus.participant." + pin;
 const demo = [
   {
@@ -172,21 +314,30 @@ export {
   esc,
   $,
   all,
+  uid,
   formData,
   link,
   btn,
+  submitButton,
   field,
   area,
   select,
   check,
   go,
   notice,
+  confirmAction,
+  busy,
   api,
   submit,
   actions,
   saveFile,
   title,
-  tabs,
+  pageHead,
+  empty,
+  chip,
+  capped,
+  more,
   storageKey,
   demo,
+  icon,
 };

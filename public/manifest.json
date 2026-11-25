@@ -3,8 +3,8 @@
   "short_name": "AskShaubo",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F7F9FC",
-  "theme_color": "#152343",
+  "background_color": "#ffffff",
+  "theme_color": "#0a2747",
   "icons": [
     {
       "src": "/mark.svg",
