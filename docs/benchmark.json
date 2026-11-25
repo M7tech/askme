@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-25T12:18:38.834Z",
+  "runtime": "v24.18.0",
+  "platform": "win32",
+  "cpu": "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz",
+  "logicalProcessors": 16,
+  "memoryGB": 32,
+  "storage": "Embedded PGlite on local disk",
+  "audience": 500,
+  "accepted": 500,
+  "measurements": {
+    "join": {
+      "totalMs": 1977,
+      "p95Ms": 1805
+    },
+    "websocket": {
+      "totalMs": 297,
+      "p95Ms": 263
+    },
+    "readQuestion": {
+      "totalMs": 3931,
+      "p95Ms": 3729
+    },
+    "answer": {
+      "totalMs": 1359,
+      "p95Ms": 1287
+    }
+  },
+  "scope": "Loopback, one synchronized question, one WebSocket start signal per participant and one HTTP read per participant. No reverse proxy, Redis or sustained browser refresh traffic."
+}

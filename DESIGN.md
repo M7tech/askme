@@ -1,0 +1,2 @@
+# Chorusroom
+The lecturer's workspace uses ink navy #152343 on paper #F7F9FC. Violet #7054E8 identifies primary actions, with mint #16B89A, coral #FF647C and yellow #FFC857 for answer shapes. The signature is a four-piece geometric chorus assembled from response cards. Use Inter/system sans for controls and tight display headings. Use the same CSS variables and field components on public, presenter and participant screens. Live regions carry form errors. All navigation uses links and all stage controls use native buttons.
