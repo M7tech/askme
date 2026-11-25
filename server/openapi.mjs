@@ -72,6 +72,7 @@ const bodies = {
       max: integer,
       rank: boolean,
       anonymous: boolean,
+      selfie: boolean,
       changes: boolean,
       repeat: boolean,
       graded: boolean,

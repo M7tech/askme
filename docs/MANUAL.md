@@ -45,6 +45,8 @@ The participant should bookmark My private results before leaving the device. Th
 
 ## Photographs and reports
 
+Under **When students scan the QR code**, choose whether to ask for a name and a selfie. Turning off the name lets students join as numbered guests. A selfie is optional for each student, needs consent first, is stored as a private session photograph and appears beside the name in presenter controls. Withdrawing consent deletes it. When guardian authorization is required, selfies are added from the gallery after it is recorded. Cameras need HTTPS; students can choose a photo instead.
+
 Enable photography in session settings. Participants may join without consent. With consent, a participant can use a device camera or existing photo through the browser file picker. A presenter can select a consenting participant in the gallery and attach a question or moment label. Revoking consent removes that person's photos. Authorized presenters can export the gallery as a ZIP.
 
 Open Session report for responses, points and elapsed time. Export CSV or Excel, or use Print / Save PDF. Compare sessions shows response rate, answer accuracy and mean elapsed time. Open the participant inspector in the presenter controls to leave private feedback. An enabled certificate appears when the participant completes all answerable questions.

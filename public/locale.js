@@ -1,3 +1,4 @@
+import { icon } from "./icons.js";
 const messages = {
   join: ["Join session", "انضم إلى الجلسة", "بەشداری لە دانیشتنەکە بکە"],
   name: ["Your name", "اسمك", "ناوت"],
@@ -12,6 +13,47 @@ const messages = {
     "I consent to private session photographs. I can withdraw consent in the gallery.",
     "أوافق على التصوير الخاص بالجلسة. يمكنني سحب موافقتي من معرض الصور.",
     "ڕەزامەندم بە وێنەگرتنی تایبەت لەم دانیشتنەدا. دەتوانم لە پێشانگای وێنەکان ڕەزامەندیم بکشێنمەوە.",
+  ],
+  selfie: [
+    "Your selfie (optional)",
+    "صورتك الشخصية (اختياري)",
+    "سێلفییەکەت (ئارەزوومەندانە)",
+  ],
+  selfieHint: [
+    "Your presenter uses it to recognize you. You can skip this and still join.",
+    "يستخدمها المقدّم للتعرّف عليك. يمكنك تخطيها والانضمام.",
+    "پێشکەشکارەکەت بۆ ناسینەوەت بەکاری دەهێنێت. دەتوانیت پشتگوێی بخەیت و هەر بەشدار بیت.",
+  ],
+  selfiePreview: ["Your selfie", "صورتك الشخصية", "سێلفییەکەت"],
+  selfieTake: ["Open camera", "افتح الكاميرا", "کامێرا بکەرەوە"],
+  selfieShoot: ["Take selfie", "التقط الصورة", "سێلفی بگرە"],
+  selfieRetake: ["Retake", "أعد الالتقاط", "دووبارە بیگرەوە"],
+  selfieRemove: ["Remove", "أزل الصورة", "لایببە"],
+  selfieChoose: ["Choose a photo", "اختر صورة", "وێنەیەک هەڵبژێرە"],
+  selfieReady: [
+    "Selfie ready. It is sent when you join.",
+    "الصورة جاهزة، وتُرسل عند انضمامك.",
+    "سێلفییەکە ئامادەیە. کاتێک بەشدار دەبیت دەنێردرێت.",
+  ],
+  selfieBlocked: [
+    "The camera is unavailable. Allow camera access or choose a photo.",
+    "الكاميرا غير متاحة. اسمح باستخدامها أو اختر صورة.",
+    "کامێرا بەردەست نییە. ڕێگە بە کامێرا بدە یان وێنەیەک هەڵبژێرە.",
+  ],
+  selfieFailed: [
+    "This photo could not be read. Choose a JPEG, PNG or WebP image.",
+    "تعذّرت قراءة الصورة. اختر صورة JPEG أو PNG أو WebP.",
+    "نەتوانرا ئەم وێنەیە بخوێنرێتەوە. وێنەیەکی JPEG، PNG یان WebP هەڵبژێرە.",
+  ],
+  selfieLater: [
+    "You joined, but the selfie was not saved. Add it from the photo gallery.",
+    "انضممت، لكن الصورة لم تُحفظ. أضفها من معرض الصور.",
+    "بەشدار بوویت، بەڵام سێلفییەکە پاشەکەوت نەکرا. لە پێشانگای وێنەکان زیادی بکە.",
+  ],
+  selfieGuardian: [
+    "Selfies open after your presenter records guardian permission.",
+    "تُتاح الصور الشخصية بعد أن يسجّل المقدّم موافقة ولي الأمر.",
+    "سێلفی دوای ئەوە دەکرێتەوە کە پێشکەشکار مۆڵەتی بەخێوکار تۆمار دەکات.",
   ],
   continue: [
     "Continue participation",
@@ -111,7 +153,9 @@ const tr = (k) => messages[k]?.[locales.indexOf(locale())] || k;
 const num = (n) => new Intl.NumberFormat(locale()).format(n);
 function chooseLanguage() {
   return (
-    '<label class="language">Language · اللغة · زمان<select id="language">' +
+    '<label class="language">' +
+    icon("globe") +
+    '<span class="sr">Language · اللغة · زمان</span><select id="language">' +
     [
       ["en", "English"],
       ["ar", "العربية"],
