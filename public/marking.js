@@ -92,7 +92,7 @@ async function marking(pin) {
       `.mark-row[data-q="${q.q}"][data-person="${CSS.escape(next || a.person)}"] input`,
     )?.focus();
   };
-  main.innerHTML = `${pageHead("Mark answers", data.title, btn("Refresh", "refresh", "", "undo") + link("Session report", "#/report/" + pin, "button", "reports") + link("Open controls", "#/host/" + pin, "button", "prev"))}<div class="toolbar"><p id="waiting" role="status"></p>${select(
+  main.innerHTML = `${pageHead("Mark answers", data.title, btn("Refresh", "refresh", "", "undo") + link("Open controls", "#/host/" + pin, "button", "prev"))}<div class="toolbar"><p id="waiting" role="status"></p>${select(
     "Show",
     "show",
     [

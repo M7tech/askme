@@ -8,6 +8,7 @@ import { rows, one, transaction } from "./db.mjs";
 import { id, token, hash, password, check, str, cleanQuiz } from "./model.mjs";
 import { installEngagement } from "./engagement.mjs";
 import { installAdmin, preferences } from "./admin.mjs";
+import { installAccounts } from "./accounts.mjs";
 import { installRooms } from "./rooms.mjs";
 import { installContent } from "./content.mjs";
 import { installOpenApi } from "./openapi.mjs";
@@ -119,7 +120,7 @@ app.use("/api", async (req, res, next) => {
   const cookie = parseCookie(req);
   if (cookie)
     req.user = await one(
-      "SELECT u.id,u.name,u.email,u.org,u.role,u.verified,o.name AS organization FROM credentials c JOIN users u ON u.id=c.uid JOIN organizations o ON o.id=u.org WHERE c.token=$1 AND c.purpose='login' AND c.expires>$2",
+      "SELECT u.id,u.name,u.email,u.org,u.role,u.verified,o.name AS organization FROM credentials c JOIN users u ON u.id=c.uid JOIN organizations o ON o.id=u.org WHERE c.token=$1 AND c.purpose='login' AND c.expires>$2 AND NOT u.suspended",
       [hash(cookie), Date.now()],
     );
   next();
@@ -158,20 +159,25 @@ async function issue(uid, purpose, ms) {
   return raw;
 }
 const smtp = createMailer();
+const mail = {
+  available: !!smtp,
+  link: (kind, raw, req) =>
+    (origin || req.protocol + "://" + req.get("host")) +
+    "/#/" +
+    kind +
+    "/" +
+    raw,
+  send: (to, link) =>
+    smtp.sendMail({
+      from: process.env.MAIL_FROM,
+      to,
+      subject: "Ask account access",
+      text: "Open this private link within one hour.\n" + link,
+    }),
+};
 async function sendLink(u, kind) {
   const raw = await issue(u.id, kind, 3600000);
-  await smtp.sendMail({
-    from: process.env.MAIL_FROM,
-    to: u.email,
-    subject: "Ask account access",
-    text:
-      "Open this private link within one hour.\n" +
-      origin +
-      "/#/" +
-      kind +
-      "/" +
-      raw,
-  });
+  await mail.send(u.email, origin + "/#/" + kind + "/" + raw);
 }
 app.get("/health", async (req, res) => {
   await one("SELECT 1");
@@ -233,6 +239,11 @@ app.post("/api/login", async (req, res) => {
       (await password(req.body.password, u.password)),
     "Email or password is incorrect.",
     401,
+  );
+  check(
+    !u.suspended,
+    "This account is suspended. Contact the platform administrator.",
+    403,
   );
   res
     .cookie(
@@ -405,7 +416,8 @@ app.delete("/api/quizzes/:id", auth, async (req, res) => {
   res.json({ ok: true });
 });
 installEngagement(app, { auth, manage });
-installAdmin(app, { auth, audit });
+const { superuser } = installAdmin(app, { auth, audit });
+installAccounts(app, { auth, superuser, audit, notify, mail });
 installRooms(app, { auth, manage, notify, limit, audit });
 installContent(app, { auth, manage, limit });
 installMedia(app, { auth, manage, notify, limit });

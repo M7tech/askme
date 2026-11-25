@@ -25,3 +25,6 @@ CREATE TABLE IF NOT EXISTS consent_records(id text PRIMARY KEY,person text REFER
 CREATE INDEX IF NOT EXISTS consent_person ON consent_records(person,recorded);
 CREATE TABLE IF NOT EXISTS settings(id text PRIMARY KEY, value jsonb NOT NULL);
 ALTER TABLE answers ADD COLUMN IF NOT EXISTS marked boolean NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS owner text REFERENCES users ON DELETE SET NULL;
+UPDATE assets a SET owner=d.owner FROM (SELECT DISTINCT ON (x->'asset'->>'id') x->'asset'->>'id' AS asset,q.owner FROM quizzes q,jsonb_array_elements(q.document) x WHERE q.owner IS NOT NULL AND x->'asset'->>'id' IS NOT NULL ORDER BY x->'asset'->>'id',q.updated) d WHERE a.id=d.asset AND a.owner IS NULL;

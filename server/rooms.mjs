@@ -260,6 +260,10 @@ export function installRooms(app, { auth, manage, notify, limit, audit }) {
         "This session has ended.",
         410,
       );
+      const {
+        rows: [presenter],
+      } = await c.query("SELECT suspended FROM users WHERE id=$1", [r.owner]);
+      check(!presenter?.suspended, "This session is unavailable.", 403);
       check(
         r.config.late || r.phase === "waiting" || r.config.mode === "self",
         "Joining has closed.",

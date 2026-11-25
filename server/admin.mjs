@@ -22,13 +22,6 @@ export function installAdmin(app, { auth, audit }) {
       orgs: await rows(
         "SELECT o.id,o.name,count(u.id)::int AS accounts FROM organizations o LEFT JOIN users u ON u.org=o.id GROUP BY o.id ORDER BY o.name",
       ),
-      accounts: await rows(
-        `SELECT u.id,u.org,u.name,u.email,u.role,u.verified,
-        (SELECT count(*)::int FROM quizzes q WHERE q.owner=u.id) AS quizzes,
-        (SELECT count(*)::int FROM rooms r WHERE r.owner=u.id) AS sessions,
-        (SELECT count(*)::int FROM people p JOIN rooms r ON r.pin=p.pin WHERE r.owner=u.id) AS participants
-        FROM users u ORDER BY u.name,u.email`,
-      ),
       activity: await rows(
         "SELECT action,at,org FROM audit ORDER BY at DESC LIMIT 50",
       ),
@@ -126,4 +119,5 @@ export function installAdmin(app, { auth, audit }) {
       registration: p.registration !== false,
     });
   });
+  return { superuser };
 }

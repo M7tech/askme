@@ -269,7 +269,7 @@ test("typed answers are marked after the session and reach results", async ({
   expect((await results(sara)).questions[0].unmarked).toBe(true);
   expect((await results(sara)).score).toBe(5);
 
-  await page.goto("/#/report/" + room.pin);
+  await page.goto("/#/host/" + room.pin);
   await page.getByRole("link", { name: "Mark answers" }).click();
   await expect(page.getByText("3 answers to mark")).toBeVisible();
   const row = (text) => page.locator(".mark-row", { hasText: text });

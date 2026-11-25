@@ -134,12 +134,10 @@ export function installContent(app, { auth, manage, limit }) {
       mime = "image/webp";
     }
     const key = id();
-    await rows("INSERT INTO assets VALUES($1,$2,$3,$4)", [
-      key,
-      req.user.org,
-      mime,
-      bytes,
-    ]);
+    await rows(
+      "INSERT INTO assets(id,org,mime,bytes,owner) VALUES($1,$2,$3,$4,$5)",
+      [key, req.user.org, mime, bytes, req.user.id],
+    );
     res.json({ id: key, mime });
   });
   app.get("/api/assets/:id", async (req, res) => {

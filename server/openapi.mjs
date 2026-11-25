@@ -154,6 +154,18 @@ const bodies = {
     { role: { type: "string", enum: ["lecturer", "admin"] } },
     ["role"],
   ),
+  "POST /admin/accounts/{id}": object(
+    {
+      action: {
+        type: "string",
+        enum: ["role", "reset", "suspend", "restore", "clear", "remove"],
+      },
+      role: { type: "string", enum: ["lecturer", "admin", "super"] },
+      delivery: { type: "string", enum: ["link", "email"] },
+      confirm: string,
+    },
+    ["action"],
+  ),
   "POST /ai": object({ topic: string }, ["topic"]),
 };
 export function installOpenApi(app) {

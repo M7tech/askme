@@ -19,3 +19,4 @@ The session review used the [OWASP Session Management Cheat Sheet](https://cheat
 
 Question attachments use shareable UUID URLs and are instructional content. Participant photos use the private gallery. A result link grants read access to the named person's authorized report and photographs. Users on shared devices must protect their browser profile. A trusted administrator can inspect database data and restore backups. Protect database volumes and backups with host-level encryption and access controls.
 
+Platform administrators can suspend, clear and remove accounts and issue single-use reset links (one hour). The server checks the role on every call, refuses actions on the caller's own account and on other platform administrators, and requires the account email for deletion. Issuing a reset link replaces the stored password with a random one and ends all sign-ins, so an administrator can take over an account; the audit log records it.

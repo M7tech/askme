@@ -117,10 +117,8 @@ for (const [theme, locale] of [
         "presentations",
         "bank",
         "sessions",
-        "reports",
         "settings",
         "certificates",
-        "analytics",
         "editor",
         "editor/" + quiz.id,
         "launch/" + quiz.id,
@@ -128,7 +126,7 @@ for (const [theme, locale] of [
         "display/" + room.pin,
         "join/" + room.pin,
         "host-gallery/" + room.pin,
-        "report/" + room.pin,
+        "mark/" + room.pin,
       ]) {
         await open(page, route);
         expect(await fits(page), `${route} at ${width}`).toBe(true);
@@ -281,13 +279,13 @@ test("phone navigation opens every section and display preferences", async ({
   await lecturer(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/#/dashboard");
-  await expect(page.getByRole("link", { name: "Question bank" })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Presentations" })).toBeHidden();
   const more = page.getByRole("button", { name: "More" });
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
-  await page.getByRole("link", { name: "Question bank" }).click();
+  await page.getByRole("link", { name: "Presentations" }).click();
   await expect(
-    page.getByRole("heading", { name: "Question bank" }),
+    page.getByRole("heading", { name: "Presentations" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Display preferences" }).click();
   await page.getByRole("switch", { name: "Dark theme" }).check({ force: true });
