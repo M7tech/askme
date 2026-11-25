@@ -45,6 +45,8 @@ The participant should bookmark My private results before leaving the device. Th
 
 ## Photographs and reports
 
+The platform administrator sees **All users** in the side menu: every registered account with its organization, role and activity, with search and a role filter. Other roles cannot open it. The deployment guide explains how to promote an account.
+
 Typed answers (Text answer, Fill in the blank, Survey, Brainstorm and Word cloud) can be marked by hand during or after a session. Open **Mark answers** from presenter controls or the session report, read each answer and give full, partial or no points. Leave the correct answer blank in the editor to mark every response yourself. If a key is set, matching answers score automatically and you can still change the points. Students see points once the answer is released; until then, or until marked, results say so. A student who changes an answer returns it to the list.
 
 Set **Move between questions** to **Automatically** to run a session without clicking Next. In a presenter-led session a question closes when its time ends or everyone has answered, pauses for the chosen seconds, then the next one opens; the session ends after the last question. Questions without a time limit use the seconds you set. If students may change answers, only the timer closes a question. Use **Hold here** or **Pause** to stop, and **Advance automatically** in presenter controls to switch it on or off during a session. In a self-paced session each student moves on after answering. Answers still appear according to the release setting.

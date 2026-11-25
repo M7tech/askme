@@ -26,7 +26,7 @@ import {
 import { mark, roomFigure, cover, liveRoom } from "./room.js";
 import { num } from "./locale.js";
 import { standings, analytics, certificates } from "./engagement.js";
-import { admin } from "./admin.js";
+import { admin, users } from "./admin.js";
 import { marking } from "./marking.js";
 import { editor, bank } from "./editor.js";
 import {
@@ -43,7 +43,7 @@ import {
 let user,
   epoch = 0,
   shownHash = null,
-  platform = "AskShaubo";
+  platform = "Ask";
 
 /* Routes: which shell a page uses, its navigation owner and document title. */
 const sections = [
@@ -65,6 +65,7 @@ const owner = {
   mark: "reports",
   analytics: "reports",
   admin: "settings",
+  users: "users",
   certificates: "settings",
 };
 for (const [key] of sections) owner[key] = key;
@@ -86,6 +87,7 @@ const titles = {
   mark: "Mark answers",
   analytics: "Session comparison",
   admin: "Platform administration",
+  users: "All users",
   certificates: "Certificate builder",
   standings: "Leaderboard",
   join: "Join session",
@@ -127,6 +129,7 @@ function shell(page) {
     return;
   }
   rail.innerHTML = `<nav aria-label="Workspace sections">${sections
+    .concat(user.role === "super" ? [["users", "All users", "users"]] : [])
     .map(
       ([key, label, glyph, primary]) =>
         `<a href="#/${key}" class="${primary ? "main-item" : "more-item"}" ${owner[page] === key ? 'aria-current="page"' : ""}>${icon(glyph)}<span>${esc(label)}</span></a>`,
@@ -435,6 +438,7 @@ async function render() {
     } else if (page === "analytics") await analytics();
     else if (page === "certificates") await certificates();
     else if (page === "admin") await admin();
+    else if (page === "users") await users();
     else if (page === "settings") await settings();
     else if (page === "presentation") await editor(a, b, "presentation");
     else if (page === "editor") await editor(a, b);

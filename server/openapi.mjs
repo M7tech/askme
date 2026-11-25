@@ -235,7 +235,7 @@ export function installOpenApi(app) {
   app.get("/api/openapi.json", (req, res) =>
     res.json({
       openapi: "3.0.3",
-      info: { title: "AskShaubo API", version: "0.1.0" },
+      info: { title: "Ask API", version: "0.1.0" },
       servers: [{ url: "/api" }],
       components: {
         securitySchemes: {

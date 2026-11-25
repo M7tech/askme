@@ -163,7 +163,7 @@ async function sendLink(u, kind) {
   await smtp.sendMail({
     from: process.env.MAIL_FROM,
     to: u.email,
-    subject: "AskShaubo account access",
+    subject: "Ask account access",
     text:
       "Open this private link within one hour.\n" +
       origin +
@@ -429,5 +429,5 @@ app.use((err, req, res, next) => {
 server.listen(
   Number(process.env.PORT || 3000),
   process.env.HOST || "0.0.0.0",
-  () => console.log("AskShaubo ready on port " + server.address().port),
+  () => console.log("Ask ready on port " + server.address().port),
 );

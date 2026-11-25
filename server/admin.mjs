@@ -6,6 +6,8 @@ export async function preferences(id) {
     (await one("SELECT value FROM settings WHERE id=$1", [id]))?.value || {}
   );
 }
+// The settings form used to save the former default, which is not a chosen name.
+const platformName = (p) => (p.name && p.name !== "AskShaubo" ? p.name : "Ask");
 export function installAdmin(app, { auth, audit }) {
   const superuser = (req, res, next) => {
     check(
@@ -21,7 +23,11 @@ export function installAdmin(app, { auth, audit }) {
         "SELECT o.id,o.name,count(u.id)::int AS accounts FROM organizations o LEFT JOIN users u ON u.org=o.id GROUP BY o.id ORDER BY o.name",
       ),
       accounts: await rows(
-        "SELECT id,org,name,email,role,verified FROM users ORDER BY email",
+        `SELECT u.id,u.org,u.name,u.email,u.role,u.verified,
+        (SELECT count(*)::int FROM quizzes q WHERE q.owner=u.id) AS quizzes,
+        (SELECT count(*)::int FROM rooms r WHERE r.owner=u.id) AS sessions,
+        (SELECT count(*)::int FROM people p JOIN rooms r ON r.pin=p.pin WHERE r.owner=u.id) AS participants
+        FROM users u ORDER BY u.name,u.email`,
       ),
       activity: await rows(
         "SELECT action,at,org FROM audit ORDER BY at DESC LIMIT 50",
@@ -34,7 +40,10 @@ export function installAdmin(app, { auth, audit }) {
         rss: process.memoryUsage().rss,
         cores: os.availableParallelism(),
       },
-      config: await preferences("platform"),
+      config: await preferences("platform").then((p) => ({
+        ...p,
+        name: platformName(p),
+      })),
     });
   });
   app.patch("/api/admin", auth, superuser, async (req, res) => {
@@ -42,7 +51,7 @@ export function installAdmin(app, { auth, audit }) {
     const config = {
       terms: str(b.terms, 12000),
       privacy: str(b.privacy, 12000),
-      name: str(b.name) || "AskShaubo",
+      name: str(b.name) || "Ask",
       retention: bounded(b.retention, 1, 3650, 90),
       maxDimension: bounded(b.maxDimension, 320, 4096, 1280),
       thumbnail: bounded(b.thumbnail, 100, 640, 320),
@@ -112,7 +121,7 @@ export function installAdmin(app, { auth, audit }) {
     res.json({
       terms: p.terms || "",
       privacy: p.privacy || "",
-      name: p.name || "AskShaubo",
+      name: platformName(p),
       publicOrigin: process.env.PUBLIC_ORIGIN || null,
       registration: p.registration !== false,
     });

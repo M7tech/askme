@@ -1,6 +1,6 @@
 {
-  "name": "AskShaubo",
-  "short_name": "AskShaubo",
+  "name": "Ask",
+  "short_name": "Ask",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

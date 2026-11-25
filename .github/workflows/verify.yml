@@ -1,4 +1,4 @@
-name: Verify AskShaubo
+name: Verify Ask
 on:
   push:
   pull_request:
