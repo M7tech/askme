@@ -271,19 +271,34 @@ async function render() {
       main.innerHTML = `<section class="panel narrow stack">${title("Unable to open this page")}<p>${esc(e.message)}</p>${link("Return home", "#/")}</section>`;
   }
 }
-api("branding")
-  .then((b) => {
-    const brand = $(".brand");
-    brand.lastChild.textContent = b.name === "Chorusroom" ? "AskShaubo" : b.name;
-  })
-  .catch(() => {});
-if ("serviceWorker" in navigator)
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
-window.addEventListener("offline", () =>
-  notice("Connection lost. Live participation resumes when you reconnect."),
-);
-window.addEventListener("online", render);
-window.addEventListener("hashchange", render);
-render();
-
-initializePreferences();
+async function start() {
+  try {
+    const branding = await api("branding");
+    if (branding.publicOrigin) {
+      const canonical = new URL(branding.publicOrigin);
+      if (canonical.origin !== location.origin) {
+        canonical.pathname = location.pathname;
+        canonical.search = location.search;
+        canonical.hash = location.hash;
+        location.replace(canonical.href);
+        return;
+      }
+    }
+    $(".brand").lastChild.textContent = branding.name;
+  } catch (error) {
+    if (navigator.onLine) {
+      main.innerHTML = `<section class="panel narrow stack">${title("Unable to open this page")}<p>${esc(error.message)}</p>${link("Reload", location.href)}</section>`;
+      return;
+    }
+  }
+  if ("serviceWorker" in navigator)
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  window.addEventListener("offline", () =>
+    notice("Connection lost. Live participation resumes when you reconnect."),
+  );
+  window.addEventListener("online", () => location.reload());
+  window.addEventListener("hashchange", render);
+  initializePreferences();
+  await render();
+}
+start();

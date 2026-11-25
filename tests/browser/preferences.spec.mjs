@@ -14,6 +14,7 @@ test("global languages, RTL and persistent font sizing", async ({ page }) => {
     ),
   ).toBeCloseTo(17.6);
   await page.reload();
+  await expect(page.locator("#font-level")).toContainText("110");
   expect(
     await page.evaluate(() =>
       parseFloat(getComputedStyle(document.documentElement).fontSize),

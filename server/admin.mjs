@@ -113,6 +113,7 @@ export function installAdmin(app, { auth, audit }) {
       terms: p.terms || "",
       privacy: p.privacy || "",
       name: p.name || "AskShaubo",
+      publicOrigin: process.env.PUBLIC_ORIGIN || null,
       registration: p.registration !== false,
     });
   });

@@ -17,6 +17,7 @@ export default defineConfig({
     env: {
       PORT: "3447",
       HOST: "127.0.0.1",
+      PUBLIC_ORIGIN: "http://127.0.0.1:3447",
       DATA_DIR: path.join(os.tmpdir(), "chorus-e2e-" + randomUUID()),
     },
   },
