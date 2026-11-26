@@ -53,6 +53,20 @@ export const choices = [
   "Ranking",
   "Ordering",
 ];
+const optionFormats = new Set([...choices, "Matching", "Drag and drop"]);
+/** Options a format really has. Switching formats can leave old ones behind. */
+export const optionsOf = (q) =>
+  optionFormats.has(q.type) && Array.isArray(q.options) ? q.options : [];
+/** Typed answers a lecturer can read and award points to. */
+const typedFormats = new Set([
+  "Text answer",
+  "Fill in the blank",
+  "Survey",
+  "Brainstorm",
+  "Word cloud",
+]);
+export const markable = (q) => typedFormats.has(q?.type);
+export const markLimit = (q) => q.points || 100;
 export function cleanQuiz(body) {
   check(str(body.title), "Give your quiz a title.");
   check(
@@ -66,8 +80,8 @@ export function cleanQuiz(body) {
       q && formats.includes(q.type) && str(q.prompt, 2000),
       "Choose a format and enter the question.",
     );
-    const options = Array.isArray(q.options)
-      ? q.options
+    const options = optionsOf(q).length
+      ? optionsOf(q)
           .map((o) => {
             const value = str(o, 400);
             return ["Matching", "Drag and drop"].includes(q.type)
@@ -115,11 +129,9 @@ export function cleanQuiz(body) {
         key && key.split("|").every((k) => options.includes(k)),
         "Choose the correct options.",
       );
-    if (["Numeric", "Fill in the blank", "Text answer"].includes(q.type))
-      check(
-        key && (q.type !== "Numeric" || Number.isFinite(Number(key))),
-        "Enter a valid answer key.",
-      );
+    // Text answers may leave the key blank; the lecturer marks them instead.
+    if (q.type === "Numeric")
+      check(key && Number.isFinite(Number(key)), "Enter a valid answer key.");
     const asset =
       q.asset &&
       /^[0-9a-f-]{36}$/.test(q.asset.id) &&
@@ -242,6 +254,7 @@ export function grade(q, v) {
     ].includes(q.type)
   )
     return null;
+  if (markable(q) && !q.key) return null;
   if (["Matching", "Drag and drop"].includes(q.type))
     return v.every((target, i) => q.options[i].split("|")[1] === target);
   if (q.type === "Image hotspot") {

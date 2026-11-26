@@ -73,6 +73,9 @@ const bodies = {
       rank: boolean,
       anonymous: boolean,
       selfie: boolean,
+      advance: { type: "string", enum: ["manual", "auto"] },
+      autoSeconds: integer,
+      autoBreak: integer,
       changes: boolean,
       repeat: boolean,
       graded: boolean,
@@ -121,6 +124,9 @@ const bodies = {
           "remove",
           "approve",
           "approve-answer",
+          "auto",
+          "hold",
+          "mark",
         ],
       },
       person: string,
@@ -128,6 +134,7 @@ const bodies = {
       message: string,
       q: integer,
       value: string,
+      points: integer,
     },
     ["action"],
   ),
@@ -146,6 +153,18 @@ const bodies = {
   "PATCH /org/member/{id}": object(
     { role: { type: "string", enum: ["lecturer", "admin"] } },
     ["role"],
+  ),
+  "POST /admin/accounts/{id}": object(
+    {
+      action: {
+        type: "string",
+        enum: ["role", "reset", "suspend", "restore", "clear", "remove"],
+      },
+      role: { type: "string", enum: ["lecturer", "admin", "super"] },
+      delivery: { type: "string", enum: ["link", "email"] },
+      confirm: string,
+    },
+    ["action"],
   ),
   "POST /ai": object({ topic: string }, ["topic"]),
 };
@@ -228,7 +247,7 @@ export function installOpenApi(app) {
   app.get("/api/openapi.json", (req, res) =>
     res.json({
       openapi: "3.0.3",
-      info: { title: "AskShaubo API", version: "0.1.0" },
+      info: { title: "Ask API", version: "0.1.0" },
       servers: [{ url: "/api" }],
       components: {
         securitySchemes: {

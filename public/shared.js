@@ -86,19 +86,33 @@ function notice(text, tone = "info") {
 }
 
 /** App-owned confirmation. Resolves true only for the named action. */
-function confirmAction(heading, consequence, verb) {
+/* With `typed`, the action unlocks once that text is entered, and the entered
+   text is returned so the server can check it too. */
+function confirmAction(heading, consequence, verb, typed = "") {
   return new Promise((resolve) => {
     const opener = document.activeElement,
       id = uid("d"),
       dialog = document.createElement("dialog");
     dialog.className = "dialog";
     dialog.setAttribute("aria-labelledby", id);
-    dialog.innerHTML = `<form method="dialog" novalidate><h2 id="${id}">${esc(heading)}</h2><p>${esc(consequence)}</p><div class="actions"><button value="" autofocus><span>Cancel</span></button><button value="yes" class="danger solid"><span>${esc(verb)}</span></button></div></form>`;
+    dialog.innerHTML = `<form method="dialog" novalidate><h2 id="${id}">${esc(heading)}</h2><p>${esc(consequence)}</p>${typed ? `<p class="typed"><span>Type this to confirm</span>: <b dir="ltr" translate="no">${esc(typed)}</b></p>${field("Confirmation", "typed", "", "text", 'autocomplete="off" dir="ltr" spellcheck="false" autocapitalize="off"')}` : ""}<div class="actions"><button value="" autofocus><span>Cancel</span></button><button value="yes" class="danger solid" ${typed ? "disabled" : ""}><span>${esc(verb)}</span></button></div></form>`;
+    const entry = dialog.querySelector("[name=typed]"),
+      matches = () => entry.value.trim().toLowerCase() === typed.toLowerCase();
+    if (typed) {
+      entry.oninput = () =>
+        (dialog.querySelector(".solid").disabled = !matches());
+      // Enter would otherwise press Cancel, the first button.
+      entry.onkeydown = (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        if (matches()) dialog.close("yes");
+      };
+    }
     dialog.onclose = () => {
       const agreed = dialog.returnValue === "yes";
       dialog.remove();
       if (opener?.isConnected) opener.focus();
-      resolve(agreed);
+      resolve(agreed && typed ? entry.value.trim() : agreed);
     };
     dialog.onclick = (e) => {
       if (e.target === dialog) dialog.close("");

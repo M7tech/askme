@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   cleanQuiz,
+  optionsOf,
   cleanAnswer,
   grade,
   released,
@@ -77,4 +78,32 @@ test("matching pairs normalize spacing and reject duplicate or incomplete labels
   assert.throws(() => cleanQuiz(quiz), /Question 1 needs/);
   quiz.questions[0].options = ["Sky|Blue", "Grass|"];
   assert.throws(() => cleanQuiz(quiz), /fill in every matching target/);
+});
+
+test("formats without options discard ones left from another format", () => {
+  for (const type of ["Text answer", "Numeric", "Survey", "Rating"]) {
+    const left = { type, prompt: "Prompt", options: ["", "Old"], key: "1" };
+    assert.deepEqual(optionsOf(left), []);
+    assert.deepEqual(
+      cleanQuiz({ title: "Quiz", questions: [left] }).questions[0].options,
+      [],
+    );
+  }
+  assert.deepEqual(optionsOf({ type: "Poll", options: ["A", "B"] }), [
+    "A",
+    "B",
+  ]);
+});
+
+test("text answers without a key wait for the lecturer", () => {
+  const q = { type: "Text answer", prompt: "Explain", key: "" };
+  const saved = cleanQuiz({ title: "Quiz", questions: [q] }).questions[0];
+  assert.equal(grade(saved, "An essay"), null);
+  assert.equal(grade({ ...saved, key: "Law" }, "law"), true);
+  assert.throws(() =>
+    cleanQuiz({
+      title: "Quiz",
+      questions: [{ type: "Numeric", prompt: "How many?", key: "" }],
+    }),
+  );
 });

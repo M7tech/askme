@@ -7,7 +7,6 @@ import {
   btn,
   submitButton,
   field,
-  select,
   notice,
   api,
   submit,
@@ -15,8 +14,6 @@ import {
   title,
   pageHead,
   empty,
-  capped,
-  more,
   storageKey,
 } from "./shared.js";
 import { mark } from "./room.js";
@@ -72,48 +69,6 @@ async function standings(pin) {
   );
   actions(async () => document.documentElement.requestFullscreen());
 }
-async function analytics() {
-  const [data, insights] = await Promise.all([
-    api("analytics"),
-    api("insights"),
-  ]);
-  const row = (r) =>
-    `<tr><td>${link(r.title, "#/report/" + r.pin, "textlink")}</td><td>${new Date(Number(r.created)).toLocaleDateString()}</td><td class="n">${num(r.participants)}</td><td class="n">${r.participants ? Math.round((100 * r.responses) / (r.participants * r.questions)) + "%" : "—"}</td><td class="n">${r.graded ? Math.round((100 * r.correct) / r.graded) + "%" : "—"}</td><td class="n">${r.elapsed ? Math.round(Number(r.elapsed) / 100) / 10 + " s" : "—"}</td><td class="n">${num(r.points)}</td></tr>`;
-  main.innerHTML = `${pageHead("Session comparison", "", link("Session reports", "#/reports", "button", "prev"))}${
-    data.length
-      ? `<div><div class="scroll" tabindex="0" role="region" aria-label="Session comparison"><table><thead><tr>${["Session", "Date", "Participants", "Response rate", "Answer accuracy", "Mean response time", "Total points"].map((k, i) => `<th scope="col"${i > 1 ? ' class="n"' : ""}>${k}</th>`).join("")}</tr></thead><tbody class="${data.length > 20 ? "capped" : ""}">${data.map(row).join("")}</tbody></table></div>${data.length > 20 ? more(data.length) : ""}</div>`
-      : empty(
-          "Launch a session to begin collecting responses.",
-          link("Quiz library", "#/library", "button primary"),
-        )
-  }<section class="block"><h2>Question analysis</h2><div class="toolbar">${field("Filter question, lecturer or session", "filter", "", "search")}${select("Order by accuracy", "order", ["Lowest first", "Highest first"])}</div><div id="insights" aria-live="polite"></div></section>`;
-  const draw = () => {
-    const query = $("[name=filter]").value.toLowerCase();
-    const list = insights
-      .filter((v) =>
-        [v.question, v.lecturer, v.session]
-          .join(" ")
-          .toLowerCase()
-          .includes(query),
-      )
-      .sort(
-        (a, b) =>
-          ($("[name=order]").value === "Lowest first" ? 1 : -1) *
-          ((a.accuracy ?? 101) - (b.accuracy ?? 101)),
-      );
-    $("#insights").innerHTML = list.length
-      ? capped(
-          list.map(
-            (v) =>
-              `<div class="listitem insight"><div><strong translate="no" dir="auto">${esc(v.question)}</strong><p class="meta"><span translate="no" dir="auto">${esc(v.session)}</span><span translate="no" dir="auto">${esc(v.lecturer)}</span><span>${`${v.submitted} responses`}</span></p></div><div class="insight-score">${v.accuracy === null ? "<span>Ungraded</span>" : `<progress value="${v.accuracy}" max="100" aria-label="Answer accuracy"></progress><b>${num(v.accuracy)}%</b>`}<small>${(v.elapsed / 1000).toFixed(1)} s</small></div></div>`,
-          ),
-        )
-      : empty("No matching responses.");
-  };
-  $("[name=filter]").oninput = draw;
-  $("[name=order]").onchange = draw;
-  draw();
-}
 async function certificates() {
   const c = await api("certificate");
   main.innerHTML = `${pageHead("Certificate builder", "", link("Settings", "#/settings", "button", "prev"))}<div class="certificate-builder"><form novalidate class="stack" id="certificate">${field("Certificate title", "title", c.title || "Certificate of completion", "text", 'dir="auto"')}${field("Issuing organization", "issuer", c.issuer, "text", 'dir="auto"')}${field("Signatory", "signature", c.signature, "text", 'dir="auto"')}${submitButton("Save certificate design")}</form><article class="certificate" aria-label="Preview"><div class="seal" aria-hidden="true">${[0, 1, 2, 3].map((i) => mark(i)).join("")}</div><p data-show="title"></p><h2>Participant</h2><p>Session</p><div class="sign"><span data-show="issuer"></span><strong data-show="signature"></strong></div></article></div>`;
@@ -129,4 +84,4 @@ async function certificates() {
     notice("Certificate design saved.");
   });
 }
-export { standings, analytics, certificates };
+export { standings, certificates };

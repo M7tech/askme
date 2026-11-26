@@ -1,4 +1,4 @@
-const version = "chorusroom-shell-v7";
+const version = "chorusroom-shell-v14";
 const shell = [
   "/",
   "/style.css",
@@ -8,6 +8,7 @@ const shell = [
   "/live.js",
   "/engagement.js",
   "/admin.js",
+  "/accounts.js",
   "/locale.js",
   "/preferences.js",
   "/translations.js",
@@ -16,6 +17,7 @@ const shell = [
   "/theme.js",
   "/icons.js",
   "/room.js",
+  "/marking.js",
   "/selfie.js",
   "/fonts/lexend-latin-wght-normal.woff2",
   "/fonts/kufam-latin-wght-normal.woff2",

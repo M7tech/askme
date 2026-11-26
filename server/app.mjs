@@ -8,6 +8,7 @@ import { rows, one, transaction } from "./db.mjs";
 import { id, token, hash, password, check, str, cleanQuiz } from "./model.mjs";
 import { installEngagement } from "./engagement.mjs";
 import { installAdmin, preferences } from "./admin.mjs";
+import { installAccounts } from "./accounts.mjs";
 import { installRooms } from "./rooms.mjs";
 import { installContent } from "./content.mjs";
 import { installOpenApi } from "./openapi.mjs";
@@ -119,9 +120,19 @@ app.use("/api", async (req, res, next) => {
   const cookie = parseCookie(req);
   if (cookie)
     req.user = await one(
-      "SELECT u.id,u.name,u.email,u.org,u.role,u.verified,o.name AS organization FROM credentials c JOIN users u ON u.id=c.uid JOIN organizations o ON o.id=u.org WHERE c.token=$1 AND c.purpose='login' AND c.expires>$2",
+      "SELECT u.id,u.name,u.email,u.org,u.role,u.verified,u.last_seen,o.name AS organization FROM credentials c JOIN users u ON u.id=c.uid JOIN organizations o ON o.id=u.org WHERE c.token=$1 AND c.purpose='login' AND c.expires>$2 AND NOT u.suspended",
       [hash(cookie), Date.now()],
     );
+  // Activity is recorded at most once a minute per account.
+  if (req.user) {
+    const now = Date.now();
+    if (now - Number(req.user.last_seen) > 60000)
+      rows("UPDATE users SET last_seen=$1 WHERE id=$2", [
+        now,
+        req.user.id,
+      ]).catch((error) => console.error(error.message));
+    delete req.user.last_seen;
+  }
   next();
 });
 const auth = (req, res, next) => {
@@ -158,20 +169,25 @@ async function issue(uid, purpose, ms) {
   return raw;
 }
 const smtp = createMailer();
+const mail = {
+  available: !!smtp,
+  link: (kind, raw, req) =>
+    (origin || req.protocol + "://" + req.get("host")) +
+    "/#/" +
+    kind +
+    "/" +
+    raw,
+  send: (to, link) =>
+    smtp.sendMail({
+      from: process.env.MAIL_FROM,
+      to,
+      subject: "Ask account access",
+      text: "Open this private link within one hour.\n" + link,
+    }),
+};
 async function sendLink(u, kind) {
   const raw = await issue(u.id, kind, 3600000);
-  await smtp.sendMail({
-    from: process.env.MAIL_FROM,
-    to: u.email,
-    subject: "AskShaubo account access",
-    text:
-      "Open this private link within one hour.\n" +
-      origin +
-      "/#/" +
-      kind +
-      "/" +
-      raw,
-  });
+  await mail.send(u.email, origin + "/#/" + kind + "/" + raw);
 }
 app.get("/health", async (req, res) => {
   await one("SELECT 1");
@@ -208,8 +224,8 @@ app.post("/api/register", async (req, res) => {
       str(b.organization),
     ]);
     await c.query(
-      "INSERT INTO users(id,org,email,name,password,role) VALUES($1,$2,$3,$4,$5,'admin')",
-      [uid, org, email, str(b.name), digest],
+      "INSERT INTO users(id,org,email,name,password,role,last_seen) VALUES($1,$2,$3,$4,$5,'admin',$6)",
+      [uid, org, email, str(b.name), digest, Date.now()],
     );
   });
   if (smtp) await sendLink({ id: uid, email }, "verify");
@@ -234,6 +250,12 @@ app.post("/api/login", async (req, res) => {
     "Email or password is incorrect.",
     401,
   );
+  check(
+    !u.suspended,
+    "This account is suspended. Contact the platform administrator.",
+    403,
+  );
+  await rows("UPDATE users SET last_seen=$1 WHERE id=$2", [Date.now(), u.id]);
   res
     .cookie(
       "chorus_session",
@@ -405,7 +427,8 @@ app.delete("/api/quizzes/:id", auth, async (req, res) => {
   res.json({ ok: true });
 });
 installEngagement(app, { auth, manage });
-installAdmin(app, { auth, audit });
+const { superuser } = installAdmin(app, { auth, audit });
+installAccounts(app, { auth, superuser, audit, notify, mail });
 installRooms(app, { auth, manage, notify, limit, audit });
 installContent(app, { auth, manage, limit });
 installMedia(app, { auth, manage, notify, limit });
@@ -429,5 +452,5 @@ app.use((err, req, res, next) => {
 server.listen(
   Number(process.env.PORT || 3000),
   process.env.HOST || "0.0.0.0",
-  () => console.log("AskShaubo ready on port " + server.address().port),
+  () => console.log("Ask ready on port " + server.address().port),
 );

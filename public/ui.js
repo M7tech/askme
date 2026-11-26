@@ -25,8 +25,10 @@ import {
 } from "./shared.js";
 import { mark, roomFigure, cover, liveRoom } from "./room.js";
 import { num } from "./locale.js";
-import { standings, analytics, certificates } from "./engagement.js";
+import { standings, certificates } from "./engagement.js";
 import { admin } from "./admin.js";
+import { users, account as manageAccount } from "./accounts.js";
+import { marking } from "./marking.js";
 import { editor, bank } from "./editor.js";
 import {
   launch,
@@ -34,7 +36,6 @@ import {
   join,
   stage,
   results,
-  report,
   roomCleanup,
   gallery,
   watch,
@@ -42,16 +43,15 @@ import {
 let user,
   epoch = 0,
   shownHash = null,
-  platform = "AskShaubo";
+  platform = "Ask";
 
 /* Routes: which shell a page uses, its navigation owner and document title. */
 const sections = [
   ["dashboard", "Workspace", "workspace", true],
   ["library", "Quiz library", "library", true],
   ["presentations", "Presentations", "slides"],
-  ["bank", "Question bank", "bank"],
+  ["bank", "Question bank", "bank", true],
   ["sessions", "Live sessions", "live", true],
-  ["reports", "Reports", "reports", true],
   ["settings", "Settings", "settings"],
 ];
 const owner = {
@@ -60,9 +60,9 @@ const owner = {
   launch: "sessions",
   host: "sessions",
   "host-gallery": "sessions",
-  report: "reports",
-  analytics: "reports",
+  mark: "sessions",
   admin: "settings",
+  users: "users",
   certificates: "settings",
 };
 for (const [key] of sections) owner[key] = key;
@@ -80,9 +80,9 @@ const titles = {
   host: "Presenter controls",
   "host-gallery": "Session photographs",
   gallery: "Session photographs",
-  report: "Session report",
-  analytics: "Session comparison",
+  mark: "Mark answers",
   admin: "Platform administration",
+  users: "All users",
   certificates: "Certificate builder",
   standings: "Leaderboard",
   join: "Join session",
@@ -124,6 +124,7 @@ function shell(page) {
     return;
   }
   rail.innerHTML = `<nav aria-label="Workspace sections">${sections
+    .concat(user.role === "super" ? [["users", "All users", "users"]] : [])
     .map(
       ([key, label, glyph, primary]) =>
         `<a href="#/${key}" class="${primary ? "main-item" : "more-item"}" ${owner[page] === key ? 'aria-current="page"' : ""}>${icon(glyph)}<span>${esc(label)}</span></a>`,
@@ -267,11 +268,11 @@ const quizCard = (q) =>
 const quizCards = (list) => list.map(quizCard).join("");
 const templateCard = (d, i) =>
   `<article class="quiz template"><a class="quiz-link" href="#/editor/template/${i}">${figures[i]()}<h3>${esc(d.title)}</h3><small>${esc(d.category)}</small><span class="go"><span>Use template</span>${icon("next")}</span></a></article>`;
-const sessionRow = (r, page) =>
-  `<div class="listitem"><div><strong translate="no" dir="auto">${esc(r.title)}</strong><p class="meta"><span><span>PIN</span> <b class="pin">${esc(r.pin)}</b></span><span>${r.participants} participants</span></p></div>${chip(r.phase)}${link(page === "reports" ? "View report" : "Open controls", "#/" + (page === "reports" ? "report" : "host") + "/" + r.pin, "button small")}</div>`;
-const sessionList = (rs, page) =>
+const sessionRow = (r) =>
+  `<div class="listitem"><div><strong translate="no" dir="auto">${esc(r.title)}</strong><p class="meta"><span><span>PIN</span> <b class="pin">${esc(r.pin)}</b></span><span>${r.participants} participants</span></p></div>${chip(r.phase)}${link("Open controls", "#/host/" + r.pin, "button small")}</div>`;
+const sessionList = (rs) =>
   rs.length
-    ? capped(rs.map((r) => sessionRow(r, page)))
+    ? capped(rs.map((r) => sessionRow(r)))
     : empty(
         "Sessions appear here when you launch a quiz.",
         link("Choose a quiz to launch", "#/library", "button primary"),
@@ -305,7 +306,7 @@ async function workspace(page) {
       .map(([k, v]) => `<div><dt>${k}</dt><dd>${num(v)}</dd></div>`)
       .join(
         "",
-      )}</dl><section class="block"><div class="row"><h2>Recent quizzes</h2>${link("View library", "#/library", "textlink", "", "next")}</div>${quizzes.length ? `<div class="quizzes">${quizCards(quizzes.slice(0, 4))}</div>` : empty("Create your first quiz or start from a template.", create + link("Start from a template", "#/library"))}</section><section class="block"><h2>Sessions</h2>${sessionList(rooms.slice(0, 5), page)}</section>`;
+      )}</dl><section class="block"><div class="row"><h2>Recent quizzes</h2>${link("View library", "#/library", "textlink", "", "next")}</div>${quizzes.length ? `<div class="quizzes">${quizCards(quizzes.slice(0, 4))}</div>` : empty("Create your first quiz or start from a template.", create + link("Start from a template", "#/library"))}</section><section class="block"><h2>Sessions</h2>${sessionList(rooms.slice(0, 5))}</section>`;
   } else if (page === "presentations") {
     const start = link(
       "Create presentation",
@@ -345,17 +346,10 @@ async function workspace(page) {
   } else
     main.innerHTML =
       pageHead(
-        page === "reports" ? "Session reports" : "Live sessions",
+        "Live sessions",
         "",
-        page === "reports"
-          ? link("Compare sessions", "#/analytics", "button", "chart")
-          : link(
-              "Choose a quiz to launch",
-              "#/library",
-              "button primary",
-              "play",
-            ),
-      ) + sessionList(rooms, page);
+        link("Choose a quiz to launch", "#/library", "button primary", "play"),
+      ) + sessionList(rooms);
 }
 async function settings() {
   const org = user.role !== "lecturer" ? await api("org") : null;
@@ -421,17 +415,15 @@ async function render() {
       account(page, a);
     else if (page === "preview") preview(Number(a));
     else if (
-      ["dashboard", "library", "presentations", "sessions", "reports"].includes(
-        page,
-      )
+      ["dashboard", "library", "presentations", "sessions"].includes(page)
     )
       await workspace(page);
     else if (page === "standings") {
       await standings(a);
       watchStandings(a);
-    } else if (page === "analytics") await analytics();
-    else if (page === "certificates") await certificates();
+    } else if (page === "certificates") await certificates();
     else if (page === "admin") await admin();
+    else if (page === "users") await (a ? manageAccount(a) : users());
     else if (page === "settings") await settings();
     else if (page === "presentation") await editor(a, b, "presentation");
     else if (page === "editor") await editor(a, b);
@@ -442,7 +434,7 @@ async function render() {
     else if (page === "play" || page === "display")
       await stage(a, b, page === "display");
     else if (page === "results") await results(a, b);
-    else if (page === "report") await report(a);
+    else if (page === "mark") await marking(a);
     else if (page === "gallery" || page === "host-gallery") await gallery(a, b);
     else if (page === "terms") {
       const brand = await api("branding");

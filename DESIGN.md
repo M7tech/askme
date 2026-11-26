@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: "AskShaubo"
+name: "Ask"
 description: "Live classroom quizzes drawn as a lecture hall: one mark for every answer, on a blue board."
 colors:
   board: "#10406F"
@@ -42,7 +42,7 @@ components:
   notice: {}
 ---
 
-# AskShaubo Design System
+# Ask Design System
 
 ## Overview
 
