@@ -16,9 +16,10 @@ import {
   pageHead,
   empty,
   capped,
+  chip,
   icon,
 } from "./shared.js";
-import { num } from "./locale.js";
+import { num, locale } from "./locale.js";
 
 const roles = [
   ["lecturer", "lecturer"],
@@ -38,6 +39,37 @@ function size(bytes) {
 }
 const bytes = (n) => `<bdi dir="ltr" translate="no">${size(n)}</bdi>`;
 const count = (n, one, many) => (n === 1 ? one : `${num(n)} ${many}`);
+/** "5 minutes ago", in the reader's language. */
+function ago(ms, now) {
+  if (!ms) return "Never signed in";
+  const words = new Intl.RelativeTimeFormat(locale(), { numeric: "auto" }),
+    s = Math.round((ms - now) / 1000);
+  for (const [unit, size] of [
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+  ])
+    if (Math.abs(s) >= size) return words.format(Math.round(s / size), unit);
+  return words.format(0, "minute");
+}
+const activeNow = (u, r) => !u.suspended && r.now - u.last_seen < r.active;
+const seen = (u, r) =>
+  activeNow(u, r)
+    ? '<span class="chip live">Active now</span>'
+    : `<span class="seen">${u.last_seen ? "Last active" : ""} <time translate="no">${esc(ago(u.last_seen, r.now))}</time></span>`;
+/* Removal asks for the email, then reports and returns where it was asked. */
+async function remove(u, after) {
+  const confirm = await confirmAction(
+    "Remove this account?",
+    "The account and all its data are deleted, including students’ result links. This cannot be undone.",
+    "Remove account",
+    u.email,
+  );
+  if (!confirm) return;
+  await api("admin/accounts/" + u.id, "POST", { action: "remove", confirm });
+  notice("Account removed.");
+  await after();
+}
 const chips = (u, self) =>
   (u.suspended ? '<span class="chip bad">Suspended</span>' : "") +
   (u.verified ? "" : '<span class="chip">Email not verified</span>') +
@@ -46,35 +78,52 @@ const chips = (u, self) =>
 
 /** Every registered account on the platform, for the platform administrator. */
 async function users() {
-  const r = await api("admin/accounts"),
+  const [r, live] = await Promise.all([
+      api("admin/accounts"),
+      api("admin/sessions"),
+    ]),
     total = r.accounts.reduce((sum, u) => sum + u.usage.bytes, 0),
     most = Math.max(1, ...r.accounts.map((u) => u.usage.bytes));
   const row = (u) =>
-    `<div class="listitem account-row"><div><strong translate="no" dir="auto">${esc(u.name)}</strong><p class="meta"><span translate="no" dir="ltr">${esc(u.email)}</span><span translate="no" dir="auto">${esc(u.organization)}</span></p></div><div class="account-chips">${chips(u, r.self)}</div><div class="account-data"><b>${bytes(u.usage.bytes)}</b><progress value="${u.usage.bytes}" max="${most}" aria-label="Data used"></progress></div>${link("Manage", "#/users/" + u.id, "button small")}</div>`;
+    `<div class="listitem account-row"><div><strong translate="no" dir="auto">${esc(u.name)}</strong><p class="meta"><span translate="no" dir="ltr">${esc(u.email)}</span><span translate="no" dir="auto">${esc(u.organization)}</span></p></div><div class="account-chips">${chips(u, r.self)}</div><div class="account-data"><b>${bytes(u.usage.bytes)}</b><progress value="${u.usage.bytes}" max="${most}" aria-label="Data used"></progress></div><div class="account-actions">${seen(u, r)}<div class="actions">${link("Manage", "#/users/" + u.id, "button small")}${u.id === r.self || u.role === "super" ? "" : btn("Remove", "remove:" + u.id, "small quiet danger", "trash")}</div></div></div>`;
+  const session = (v) =>
+    `<div class="listitem session-row"><div><strong translate="no" dir="auto">${esc(v.title)}</strong><p class="meta"><span><span>PIN</span> <b class="pin">${esc(v.pin)}</b></span><span translate="no" dir="auto">${esc(v.presenter || "Removed account")}</span><span translate="no" dir="auto">${esc(v.organization)}</span></p></div>${chip(v.phase)}<p class="meta"><span>${`${num(v.participants)} participants`}</span><span>${`${num(v.responses)} responses`}</span>${v.phase === "waiting" ? "" : `<span>${`Question ${v.position + 1} of ${v.questions}`}</span>`}</p><div class="actions">${link("Open controls", "#/host/" + v.pin, "button small")}${btn("End session", "end:" + v.pin, "small quiet danger", "stop")}</div></div>`;
   main.innerHTML = `${pageHead("All users", "", link("Platform administration", "#/admin", "button", "prev"))}<dl class="figures">${[
     ["Users", num(r.accounts.length)],
-    ["Suspended", num(r.accounts.filter((u) => u.suspended).length)],
-    ["Sessions", num(r.accounts.reduce((n, u) => n + u.usage.sessions, 0))],
+    ["Active now", num(r.accounts.filter((u) => activeNow(u, r)).length)],
+    ["Active sessions", num(live.length)],
     ["Data used", bytes(total)],
   ]
     .map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`)
     .join(
       "",
-    )}</dl><div class="toolbar">${field("Search name, email or organization", "search", "", "search")}${select("Role", "filter", [["", "Every role"], ...roles], "")}${select(
+    )}</dl><section class="block"><div class="row"><h2>Active sessions</h2><p class="hint">Sessions that have not ended, across every organization.</p></div>${live.length ? capped(live.map(session)) : empty("No sessions are running.")}</section><section class="block"><h2>Users</h2><div class="toolbar">${field("Search name, email or organization", "search", "", "search")}${select("Role", "filter", [["", "Every role"], ...roles], "")}${select(
+    "Show",
+    "state",
+    [
+      ["", "Everyone"],
+      ["active", "Active now"],
+      ["suspended", "Suspended"],
+    ],
+    "",
+  )}${select(
     "Sort by",
     "sort",
     [
       ["name", "Name"],
       ["data", "Most data"],
+      ["seen", "Recently active"],
     ],
     "name",
-  )}</div><div id="users" aria-live="polite"></div>`;
+  )}</div><div id="users" aria-live="polite"></div></section>`;
   const draw = () => {
     const query = $("[name=search]").value.trim().toLowerCase(),
-      role = $("[name=filter]").value;
+      role = $("[name=filter]").value,
+      state = $("[name=state]").value;
     const list = r.accounts.filter(
       (u) =>
         (!role || u.role === role) &&
+        (!state || (state === "active" ? activeNow(u, r) : u.suspended)) &&
         [u.name, u.email, u.organization]
           .join(" ")
           .toLowerCase()
@@ -82,14 +131,38 @@ async function users() {
     );
     if ($("[name=sort]").value === "data")
       list.sort((a, b) => b.usage.bytes - a.usage.bytes);
+    if ($("[name=sort]").value === "seen")
+      list.sort((a, b) => b.last_seen - a.last_seen);
     $("#users").innerHTML = list.length
       ? capped(list.map(row))
       : empty("No matching users.");
   };
   $("[name=search]").oninput = draw;
   $("[name=filter]").onchange = draw;
+  $("[name=state]").onchange = draw;
   $("[name=sort]").onchange = draw;
   draw();
+  actions(async (a) => {
+    if (a.startsWith("remove:"))
+      return remove(
+        r.accounts.find((u) => u.id === a.slice(7)),
+        users,
+      );
+    if (a.startsWith("end:")) {
+      const pin = a.slice(4);
+      if (
+        !(await confirmAction(
+          "End this session?",
+          "Answering closes for everyone.",
+          "End session",
+        ))
+      )
+        return;
+      await api("rooms/" + pin + "/control", "POST", { action: "end" });
+      notice("Session ended.");
+      await users();
+    }
+  });
 }
 
 /** One account: what it stores and what the administrator may do with it. */
@@ -106,7 +179,7 @@ async function account(id) {
     `<div class="usage-row"><div><strong>${label}</strong><p class="meta"><span>${detail}</span></p></div><progress value="${value}" max="${Math.max(1, g.bytes)}" aria-label="${label}"></progress><b>${bytes(value)}</b></div>`;
   const section = (heading, note, body) =>
     `<section><div><h2>${heading}</h2><p>${note}</p></div><div class="stack">${body}</div></section>`;
-  main.innerHTML = `${pageHead("Manage account", "", link("All users", "#/users", "button", "prev"))}<div class="account-card"><div><h2 translate="no" dir="auto">${esc(u.name)}</h2><p class="meta"><span translate="no" dir="ltr">${esc(u.email)}</span><span translate="no" dir="auto">${esc(u.organization)}</span></p></div><div class="account-chips">${chips(u, r.self)}</div></div><div class="settings">${section(
+  main.innerHTML = `${pageHead("Manage account", "", link("All users", "#/users", "button", "prev"))}<div class="account-card"><div><h2 translate="no" dir="auto">${esc(u.name)}</h2><p class="meta"><span translate="no" dir="ltr">${esc(u.email)}</span><span translate="no" dir="auto">${esc(u.organization)}</span></p></div><div class="account-chips">${chips(u, r.self)}${seen(u, r)}</div></div><div class="settings">${section(
     "Data used",
     "Space stored in the database.",
     `<p class="big">${bytes(g.bytes)}</p><div class="usage">${part("Quizzes", count(g.quizzes, "1 quiz", "quizzes"), g.data.quizzes)}${part("Question media", count(g.media, "1 file", "files"), g.data.media)}${part("Sessions and answers", `${count(g.sessions, "1 session", "sessions")}</span><span>${num(g.participants)} participants</span><span>${num(g.answers)} responses`, g.data.sessions)}${part("Session photographs", count(g.photos, "1 photo", "photos"), g.data.photos)}</div>`,
@@ -218,18 +291,7 @@ async function account(id) {
       notice("Data cleared.");
       return account(id);
     }
-    if (a === "remove") {
-      const confirm = await confirmAction(
-        "Remove this account?",
-        "The account and all its data are deleted, including students’ result links. This cannot be undone.",
-        "Remove account",
-        u.email,
-      );
-      if (!confirm) return;
-      await act("remove", { confirm });
-      notice("Account removed.");
-      go("users");
-    }
+    if (a === "remove") return remove(u, () => go("users"));
   });
 }
 export { users, account };

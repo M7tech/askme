@@ -28,3 +28,4 @@ ALTER TABLE answers ADD COLUMN IF NOT EXISTS marked boolean NOT NULL DEFAULT fal
 ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS owner text REFERENCES users ON DELETE SET NULL;
 UPDATE assets a SET owner=d.owner FROM (SELECT DISTINCT ON (x->'asset'->>'id') x->'asset'->>'id' AS asset,q.owner FROM quizzes q,jsonb_array_elements(q.document) x WHERE q.owner IS NOT NULL AND x->'asset'->>'id' IS NOT NULL ORDER BY x->'asset'->>'id',q.updated) d WHERE a.id=d.asset AND a.owner IS NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen bigint NOT NULL DEFAULT 0;

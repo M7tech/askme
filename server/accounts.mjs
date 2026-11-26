@@ -78,17 +78,38 @@ async function clearData(c, uid) {
   return pins.map((v) => v.pin);
 }
 
+/** Someone who used the site in the last 15 minutes counts as active now. */
+const ACTIVE = 15 * 60000;
 export function installAccounts(app, { auth, superuser, audit, notify, mail }) {
   app.get("/api/admin/accounts", auth, superuser, async (req, res) => {
     const measure = await usage();
     const accounts = await rows(
-      "SELECT u.id,u.org,o.name AS organization,u.name,u.email,u.role,u.verified,u.suspended FROM users u JOIN organizations o ON o.id=u.org ORDER BY u.name,u.email",
+      "SELECT u.id,u.org,o.name AS organization,u.name,u.email,u.role,u.verified,u.suspended,u.last_seen::float8 AS last_seen,EXISTS(SELECT 1 FROM credentials c WHERE c.uid=u.id AND c.purpose='login' AND c.expires>$1) AS signed_in FROM users u JOIN organizations o ON o.id=u.org ORDER BY u.name,u.email",
+      [Date.now()],
     );
     res.json({
+      now: Date.now(),
+      active: ACTIVE,
       mail: mail.available,
       self: req.user.id,
       accounts: accounts.map((u) => ({ ...u, usage: measure(u.id) })),
     });
+  });
+  // Sessions that have not ended or expired, across every organization.
+  app.get("/api/admin/sessions", auth, superuser, async (req, res) => {
+    res.json(
+      await rows(
+        `SELECT r.pin,r.title,r.phase,r.position,jsonb_array_length(r.snapshot) AS questions,
+          r.created::float8 AS created,r.config->>'mode' AS mode,r.owner,u.name AS presenter,u.email,o.name AS organization,
+          (SELECT count(*)::int FROM people p WHERE p.pin=r.pin) AS participants,
+          (SELECT count(*)::int FROM answers a JOIN people p ON p.id=a.person WHERE p.pin=r.pin) AS responses,
+          (SELECT max(p.joined)::float8 FROM people p WHERE p.pin=r.pin) AS joined
+         FROM rooms r JOIN organizations o ON o.id=r.org LEFT JOIN users u ON u.id=r.owner
+         WHERE r.phase<>'ended' AND (r.config->>'expires')::bigint>$1
+         ORDER BY (r.phase='waiting'),greatest(r.created,coalesce((SELECT max(p.joined) FROM people p WHERE p.pin=r.pin),0)) DESC`,
+        [Date.now()],
+      ),
+    );
   });
   app.post("/api/admin/accounts/:id", auth, superuser, async (req, res) => {
     const { action } = req.body,

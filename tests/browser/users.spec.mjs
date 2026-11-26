@@ -17,7 +17,7 @@ const env = {
   PUBLIC_ORIGIN: origin,
   DATA_DIR: path.join(os.tmpdir(), "chorus-users-" + randomUUID()),
 };
-let server, boss, lecturer, colleague;
+let server, boss, lecturer, colleague, leaver;
 const boot = async () => {
   server = spawn(process.execPath, ["server/app.mjs"], { cwd: root, env });
   await expect
@@ -55,6 +55,7 @@ test.beforeAll(async ({ playwright }) => {
   boss = await account("Platform Owner", "Operations");
   lecturer = await account("Rezan Ali", "College of Law");
   colleague = await account("Hawar Omar", "Temporary");
+  leaver = await account("Old Account", "Former faculty");
   await stop();
   expect(
     spawnSync(process.execPath, ["server/promote.mjs", boss.email], {
@@ -72,6 +73,7 @@ test.beforeAll(async ({ playwright }) => {
       `const { rows } = await import("./server/db.mjs");
        await rows("UPDATE users SET org=(SELECT org FROM users WHERE email=$1),role='lecturer' WHERE email=$2",["${lecturer.email}","${colleague.email}"]);
        await rows("DELETE FROM organizations WHERE name='Temporary'");
+       await rows("UPDATE users SET last_seen=$1 WHERE email=$2",[Date.now()-3*3600000,"${leaver.email}"]);
        process.exit(0);`,
     ],
     { cwd: root, env, timeout: 30000 },
@@ -149,7 +151,7 @@ test("administrator sees data used, filters users and changes roles", async ({
   await page.context().addCookies(boss.cookies);
   await page.goto("/#/dashboard");
   await page.getByRole("link", { name: "All users" }).click();
-  await expect(page.locator(".account-row")).toHaveCount(3);
+  await expect(page.locator(".account-row")).toHaveCount(4);
   await page.getByLabel(/Search name/).fill("rezan");
   await expect(page.locator(".account-row")).toHaveCount(1);
   await page.getByRole("link", { name: "Manage" }).click();
@@ -328,6 +330,70 @@ test("limits: own account, other administrators, confirmation and other roles", 
   ).toBe(403);
   await other.dispose();
   expect((await find(page, lecturer.email)).usage.quizzes).toBe(1);
+});
+
+test("administrator sees active sessions and users, ends sessions and removes from the list", async ({
+  page,
+  playwright,
+}) => {
+  await page.context().addCookies(boss.cookies);
+  await page.goto("/#/users");
+  const sessions = page.locator(".session-row");
+  await expect(sessions).toHaveCount(1);
+  await expect(sessions).toContainText("Contracts");
+  await expect(sessions).toContainText("Rezan Ali");
+  await expect(sessions).toContainText(lecturer.pin);
+  // The administrator is using the site, so counts as active.
+  const me = page.locator(".account-row", { hasText: boss.email });
+  await expect(me.getByText("Active now")).toBeVisible();
+  await expect(me.getByRole("button", { name: "Remove" })).toHaveCount(0);
+  await page.getByLabel("Show", { exact: true }).selectOption("active");
+  await expect(
+    page.locator(".account-row", { hasText: boss.email }),
+  ).toBeVisible();
+  await page.getByLabel("Show", { exact: true }).selectOption("");
+  // Last activity is shown for everyone else, and refreshed when they return.
+  const old = page.locator(".account-row", { hasText: leaver.email });
+  await expect(old.getByText("Active now")).toHaveCount(0);
+  await expect(old.locator(".seen")).toContainText("Last active 3 hours ago");
+  // Ending asks first.
+  await sessions.getByRole("button", { name: "End session" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "End session" })
+    .click();
+  await expect(page.getByText("No sessions are running.")).toBeVisible();
+  const state = await (
+    await page.request.get(`/api/rooms/${lecturer.pin}/info`)
+  ).json();
+  expect(state.phase).toBe("ended");
+  // Removing from the list deletes the account after typing its email.
+  await old.getByRole("button", { name: "Remove" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Confirmation").fill(leaver.email);
+  await dialog.getByRole("button", { name: "Remove account" }).click();
+  await expect(page.getByText("Account removed.")).toBeVisible();
+  await expect(
+    page.locator(".account-row", { hasText: leaver.email }),
+  ).toHaveCount(0);
+  const gone = await playwright.request.newContext({ baseURL: origin });
+  expect((await signIn(gone, leaver)).status()).toBe(401);
+  await gone.dispose();
+  for (const width of [1280, 360]) {
+    await page.setViewportSize({ width, height: 800 });
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  }
+  // Only platform administrators can list sessions across organizations.
+  const other = await playwright.request.newContext({ baseURL: origin });
+  await signIn(other, colleague);
+  expect((await other.get("/api/admin/sessions")).status()).toBe(403);
+  await other.dispose();
 });
 
 test("clearing keeps the account and colleagues' media; removing deletes everything", async ({

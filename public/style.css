@@ -1909,6 +1909,22 @@ body[data-view="auth"] #footer {
   align-items: center;
   gap: var(--s2) var(--s5);
 }
+.account-actions {
+  display: grid;
+  justify-items: end;
+  gap: var(--s1);
+}
+.seen {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+.session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s2) var(--s5);
+}
 .account-data {
   display: grid;
   gap: 0.3rem;
@@ -1974,6 +1990,23 @@ body[data-view="auth"] #footer {
   }
   .account-data {
     max-width: 14rem;
+  }
+  .account-actions {
+    justify-items: start;
+  }
+  .session-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .session-row > :first-child {
+    grid-column: 1;
+  }
+  .session-row > p,
+  .session-row > .actions {
+    grid-column: 1 / -1;
+  }
+  .session-row > .chip {
+    grid-row: 1;
+    grid-column: 2;
   }
 }
 @media (max-width: 480px) {

@@ -120,9 +120,19 @@ app.use("/api", async (req, res, next) => {
   const cookie = parseCookie(req);
   if (cookie)
     req.user = await one(
-      "SELECT u.id,u.name,u.email,u.org,u.role,u.verified,o.name AS organization FROM credentials c JOIN users u ON u.id=c.uid JOIN organizations o ON o.id=u.org WHERE c.token=$1 AND c.purpose='login' AND c.expires>$2 AND NOT u.suspended",
+      "SELECT u.id,u.name,u.email,u.org,u.role,u.verified,u.last_seen,o.name AS organization FROM credentials c JOIN users u ON u.id=c.uid JOIN organizations o ON o.id=u.org WHERE c.token=$1 AND c.purpose='login' AND c.expires>$2 AND NOT u.suspended",
       [hash(cookie), Date.now()],
     );
+  // Activity is recorded at most once a minute per account.
+  if (req.user) {
+    const now = Date.now();
+    if (now - Number(req.user.last_seen) > 60000)
+      rows("UPDATE users SET last_seen=$1 WHERE id=$2", [
+        now,
+        req.user.id,
+      ]).catch((error) => console.error(error.message));
+    delete req.user.last_seen;
+  }
   next();
 });
 const auth = (req, res, next) => {
@@ -214,8 +224,8 @@ app.post("/api/register", async (req, res) => {
       str(b.organization),
     ]);
     await c.query(
-      "INSERT INTO users(id,org,email,name,password,role) VALUES($1,$2,$3,$4,$5,'admin')",
-      [uid, org, email, str(b.name), digest],
+      "INSERT INTO users(id,org,email,name,password,role,last_seen) VALUES($1,$2,$3,$4,$5,'admin',$6)",
+      [uid, org, email, str(b.name), digest, Date.now()],
     );
   });
   if (smtp) await sendLink({ id: uid, email }, "verify");
@@ -245,6 +255,7 @@ app.post("/api/login", async (req, res) => {
     "This account is suspended. Contact the platform administrator.",
     403,
   );
+  await rows("UPDATE users SET last_seen=$1 WHERE id=$2", [Date.now(), u.id]);
   res
     .cookie(
       "chorus_session",
